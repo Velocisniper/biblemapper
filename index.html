@@ -43,12 +43,17 @@
             max-width: var(--max-width);
         }
 
-        /* Header Styling */
+        /* Header & Navigation Styling */
         header {
             margin-bottom: 2.5rem;
-            padding-bottom: 1rem;
+            padding-bottom: 1.5rem;
             border-bottom: 1px solid var(--border-color);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
         }
 
         header h1 {
@@ -56,6 +61,22 @@
             font-size: 1.5rem;
             color: var(--primary-color);
             letter-spacing: -0.02em;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        select {
+            font-size: 1rem;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            cursor: pointer;
         }
 
         /* Scripture Layout Styling */
@@ -123,6 +144,12 @@
     <div class="container">
         <header>
             <h1>BibleMapper</h1>
+            <div class="controls">
+                <label for="book-select"><strong>Book:</strong></label>
+                <select id="book-select">
+                    <!-- Dropdown options populated dynamically by JavaScript -->
+                </select>
+            </div>
         </header>
 
         <main id="scripture-container">
@@ -132,15 +159,91 @@
 
     <script>
         /**
-         * BibleMapper Scripture Loader
-         * Fetches JSON scripture data and renders it cleanly into the HTML container.
+         * Bible Metadata mapping book names to Testament (OT/NT) and 3-letter codes
          */
+        const BIBLE_BOOKS = [
+            // Old Testament
+            { name: "Genesis", code: "GEN", testament: "OT" },
+            { name: "Exodus", code: "EXO", testament: "OT" },
+            { name: "Leviticus", code: "LEV", testament: "OT" },
+            { name: "Numbers", code: "NUM", testament: "OT" },
+            { name: "Deuteronomy", code: "DEU", testament: "OT" },
+            { name: "Joshua", code: "JOS", testament: "OT" },
+            { name: "Judges", code: "JDG", testament: "OT" },
+            { name: "Ruth", code: "RUT", testament: "OT" },
+            { name: "1 Samuel", code: "1SA", testament: "OT" },
+            { name: "2 Samuel", code: "2SA", testament: "OT" },
+            { name: "1 Kings", code: "1KI", testament: "OT" },
+            { name: "2 Kings", code: "2KI", testament: "OT" },
+            { name: "1 Chronicles", code: "1CH", testament: "OT" },
+            { name: "2 Chronicles", code: "2CH", testament: "OT" },
+            { name: "Ezra", code: "EZR", testament: "OT" },
+            { name: "Nehemiah", code: "NEH", testament: "OT" },
+            { name: "Esther", code: "EST", testament: "OT" },
+            { name: "Job", code: "JOB", testament: "OT" },
+            { name: "Psalms", code: "PSA", testament: "OT" },
+            { name: "Proverbs", code: "PRO", testament: "OT" },
+            { name: "Ecclesiastes", code: "ECC", testament: "OT" },
+            { name: "Song of Solomon", code: "SNG", testament: "OT" },
+            { name: "Isaiah", code: "ISA", testament: "OT" },
+            { name: "Jeremiah", code: "JER", testament: "OT" },
+            { name: "Lamentations", code: "LAM", testament: "OT" },
+            { name: "Ezekiel", code: "EZK", testament: "OT" },
+            { name: "Daniel", code: "DAN", testament: "OT" },
+            { name: "Hosea", code: "HOS", testament: "OT" },
+            { name: "Joel", code: "JOL", testament: "OT" },
+            { name: "Amos", code: "AMO", testament: "OT" },
+            { name: "Obadiah", code: "OBA", testament: "OT" },
+            { name: "Jonah", code: "JON", testament: "OT" },
+            { name: "Micah", code: "MIC", testament: "OT" },
+            { name: "Nahum", code: "NAM", testament: "OT" },
+            { name: "Habakkuk", code: "HAB", testament: "OT" },
+            { name: "Zephaniah", code: "ZEP", testament: "OT" },
+            { name: "Haggai", code: "HAG", testament: "OT" },
+            { name: "Zechariah", code: "ZEC", testament: "OT" },
+            { name: "Malachi", code: "MAL", testament: "OT" },
 
-        async function loadScripture(filePath) {
+            // New Testament
+            { name: "Matthew", code: "MAT", testament: "NT" },
+            { name: "Mark", code: "MRK", testament: "NT" },
+            { name: "Luke", code: "LUK", testament: "NT" },
+            { name: "John", code: "JOH", testament: "NT" },
+            { name: "Acts", code: "ACT", testament: "NT" },
+            { name: "Romans", code: "ROM", testament: "NT" },
+            { name: "1 Corinthians", code: "1CO", testament: "NT" },
+            { name: "2 Corinthians", code: "2CO", testament: "NT" },
+            { name: "Galatians", code: "GAL", testament: "NT" },
+            { name: "Ephesians", code: "EPH", testament: "NT" },
+            { name: "Philippians", code: "PHP", testament: "NT" },
+            { name: "Colossians", code: "COL", testament: "NT" },
+            { name: "1 Thessalonians", code: "1TH", testament: "NT" },
+            { name: "2 Thessalonians", code: "2TH", testament: "NT" },
+            { name: "1 Timothy", code: "1TI", testament: "NT" },
+            { name: "2 Timothy", code: "2TI", testament: "NT" },
+            { name: "Titus", code: "TIT", testament: "NT" },
+            { name: "Philemon", code: "PHM", testament: "NT" },
+            { name: "Hebrews", code: "HEB", testament: "NT" },
+            { name: "James", code: "JAS", testament: "NT" },
+            { name: "1 Peter", code: "1PE", testament: "NT" },
+            { name: "2 Peter", code: "2PE", testament: "NT" },
+            { name: "1 John", code: "1JO", testament: "NT" },
+            { name: "2 John", code: "2JO", testament: "NT" },
+            { name: "3 John", code: "3JO", testament: "NT" },
+            { name: "Jude", code: "JUD", testament: "NT" },
+            { name: "Revelation", code: "REV", testament: "NT" }
+        ];
+
+        // Default settings
+        const DEFAULT_TRANSLATION = 'ESV.json'; 
+
+        /**
+         * Dynamic Loader Function
+         */
+        async function loadScripture(testament, bookCode) {
             const container = document.getElementById('scripture-container');
+            const filePath = `BibleMapper_Data/${testament}/${bookCode}/${DEFAULT_TRANSLATION}`;
             
             try {
-                // Display loading indicator
                 container.innerHTML = '<p class="loading">Loading scripture text...</p>';
 
                 const response = await fetch(filePath);
@@ -156,52 +259,46 @@
                 container.innerHTML = `
                     <div class="error">
                         <strong>Failed to load scripture content.</strong><br>
-                        Please verify that the JSON file exists at path: <code>${filePath}</code>
+                        Please verify that the file exists at path: <code>${filePath}</code>
                     </div>`;
             }
         }
 
         /**
-         * Parses JSON structure and injects formatted HTML into DOM
+         * Renders JSON structure into HTML
          */
         function renderScripture(data) {
             const container = document.getElementById('scripture-container');
-            container.innerHTML = ''; // Clear loading state
+            container.innerHTML = '';
 
             if (!data || !Array.isArray(data.text)) {
                 container.innerHTML = '<div class="error">Invalid or missing scripture data structure in JSON file.</div>';
                 return;
             }
 
-            // Loop through each chapter in data.text
             data.text.forEach(chapter => {
                 const chapterElement = document.createElement('article');
                 chapterElement.className = 'chapter';
                 chapterElement.id = chapter.ID;
 
-                // Chapter Title Header
                 const titleElement = document.createElement('h2');
                 titleElement.className = 'chapter-title';
                 titleElement.textContent = chapter.name;
                 chapterElement.appendChild(titleElement);
 
-                // Verses Paragraph Container
                 const paragraphElement = document.createElement('p');
                 paragraphElement.className = 'chapter-text';
 
-                // Loop through verses
                 if (Array.isArray(chapter.text)) {
                     chapter.text.forEach(verse => {
                         const verseWrapper = document.createElement('span');
                         verseWrapper.className = 'verse';
                         verseWrapper.id = `${chapter.ID}.${verse.ID}`;
 
-                        // Verse Number
                         const verseNum = document.createElement('sup');
                         verseNum.className = 'verse-number';
                         verseNum.textContent = verse.ID;
 
-                        // Verse Content
                         const verseText = document.createTextNode(` ${verse.text} `);
 
                         verseWrapper.appendChild(verseNum);
@@ -215,12 +312,51 @@
             });
         }
 
-        // Initialize script execution when DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            // Adjust this path relative to where index.html is located in your repo
-            const defaultFilePath = 'BibleMapper_Data/1KI/ESV.json'; 
+        /**
+         * Populates selector dropdown grouped by Old and New Testament
+         */
+        function initializeBookSelector() {
+            const selector = document.getElementById('book-select');
             
-            loadScripture(defaultFilePath);
+            const otGroup = document.createElement('optgroup');
+            otGroup.label = "Old Testament";
+
+            const ntGroup = document.createElement('optgroup');
+            ntGroup.label = "New Testament";
+
+            BIBLE_BOOKS.forEach(book => {
+                const option = document.createElement('option');
+                option.value = JSON.stringify({ testament: book.testament, code: book.code });
+                option.textContent = book.name;
+
+                // Set 1 Kings (1KI) as default selection
+                if (book.code === '1KI') {
+                    option.selected = true;
+                }
+
+                if (book.testament === 'OT') {
+                    otGroup.appendChild(option);
+                } else {
+                    ntGroup.appendChild(option);
+                }
+            });
+
+            selector.appendChild(otGroup);
+            selector.appendChild(ntGroup);
+
+            // Listen for user selection changes
+            selector.addEventListener('change', (e) => {
+                const selected = JSON.parse(e.target.value);
+                loadScripture(selected.testament, selected.code);
+            });
+        }
+
+        // Initialize application when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeBookSelector();
+            
+            // Load default book (1 Kings - OT/1KI)
+            loadScripture('OT', '1KI');
         });
     </script>
 </body>
