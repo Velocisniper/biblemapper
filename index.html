@@ -3,92 +3,310 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bible Places Map</title>
-
-  <!-- Leaflet CSS -->
+  <title>BibleMapper</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
     body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background-color: #b5d0d0; /* Soft background color matching water bodies */
-    }
-    #map {
-      height: 100vh;
-      width: 100%;
-    }
-
-    /* Styled permanent labels for your Bible places */
-    .bible-place-label {
-      background: rgba(255, 255, 255, 0.85);
-      border: 1px solid #999;
-      border-radius: 3px;
-      padding: 1px 5px;
+      margin: 0; padding: 0; height: 100%; background-color: #b5d0d0;
       font-family: Arial, sans-serif;
-      font-size: 11px;
-      font-weight: bold;
-      color: #222;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+    #map { height: 100vh; width: 100%; }
+
+    /* Map Label Styling */
+    .map-place-label {
+      font-family: 'Georgia', serif;
+      color: #2c1810;
       white-space: nowrap;
+      text-shadow: 
+        1px  1px 2px #ffffff, -1px -1px 2px #ffffff,
+        1px -1px 2px #ffffff, -1px  1px 2px #ffffff,
+        0px  0px 3px #ffffff, 0px  0px 5px #ffffff;
     }
 
-    /* Removes the default speech-bubble arrow for a cleaner text label look */
-    .leaflet-tooltip-top:before,
-    .leaflet-tooltip-bottom:before,
-    .leaflet-tooltip-left:before,
-    .leaflet-tooltip-right:before {
-      display: none !important;
+    /* Start Menu Overlay Styling */
+    #start-menu {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #1e1e1e;
+      z-index: 9998; 
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 8vh;
     }
+
+    #start-menu h1 {
+      color: #ffffff;
+      text-transform: uppercase;
+      font-size: 2.2rem;
+      letter-spacing: 1px;
+      margin-bottom: 25px;
+    }
+
+    #start-menu img {
+      width: 240px; /* Doubled logo size */
+      height: auto;
+      margin-bottom: 40px;
+    }
+
+    .menu-btn {
+      width: 260px;
+      padding: 16px;
+      margin-bottom: 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      color: white;
+      cursor: pointer;
+    }
+
+    .btn-blue {
+      background-color: #265b8f; 
+      text-transform: uppercase;
+    }
+    .btn-blue:hover { background-color: #1e4b78; }
+
+    .btn-grey {
+      background-color: #444444; 
+      text-transform: uppercase;
+    }
+    .btn-grey:hover { background-color: #333333; }
+
+    .btn-daily {
+      background-color: #265b8f;
+      text-transform: none; 
+      margin-top: 5px;
+    }
+    .btn-daily:hover { background-color: #1e4b78; }
+
+    /* How To Play Modal Styling */
+    #how-to-modal {
+      display: none; /* Hidden by default */
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.75);
+      z-index: 9999; /* Sits above the start menu */
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background-color: #2b2b2b;
+      color: #ffffff;
+      padding: 30px 40px;
+      border-radius: 8px;
+      width: 80%;
+      max-width: 500px;
+      position: relative;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 15px;
+      right: 20px;
+      color: #aaaaaa;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .close-btn:hover { color: #ffffff; }
+
+    .modal-content h2 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      letter-spacing: 1px;
+    }
+
+    .modal-content ul {
+      padding-left: 20px;
+      line-height: 1.6;
+      font-size: 1.05rem;
+    }
+
+    .modal-content li {
+      margin-bottom: 12px;
+    }
+
+    .credits {
+      margin-top: 25px;
+      font-style: italic;
+      color: #aaaaaa;
+      font-size: 0.9rem;
+    }
+
   </style>
 </head>
 <body>
 
+  <!-- Start Menu Overlay -->
+  <div id="start-menu">
+    <h1>BibleMapper</h1>
+    
+    <img src="logo.png" alt="BibleMapper Logo" onerror="this.style.display='none';">
+    
+    <button class="menu-btn btn-blue" id="btn-custom">Custom Game</button>
+    <button class="menu-btn btn-grey" id="btn-how-to">How to Play</button>
+    <button class="menu-btn btn-daily" id="btn-daily">Play Daily Game</button>
+  </div>
+
+  <!-- How To Play Modal -->
+  <div id="how-to-modal">
+    <div class="modal-content">
+      <span class="close-btn" id="close-modal">&times;</span>
+      <h2>HOW TO PLAY:</h2>
+      <ul>
+        <li>A verse will be displayed with a geographical location in it.</li>
+        <li>This location will be concealed.</li>
+        <li>Using your knowledge of the Bible and context from the surrounding verses, find the location from the verse on the map!</li>
+        <li>Closer guesses score more points.</li>
+        <li>The daily game has 3 rounds, after which you can share your score with friends!</li>
+      </ul>
+      <p class="credits">Created by Matthew Kearney</p>
+    </div>
+  </div>
+
+  <!-- Map Container -->
   <div id="map"></div>
 
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   
   <script>
-    // 1. Geographic Boundaries (Spain to India)
+    // --- UI INTERACTION LOGIC ---
+    const howToBtn = document.getElementById('btn-how-to');
+    const howToModal = document.getElementById('how-to-modal');
+    const closeModalBtn = document.getElementById('close-modal');
+
+    // Open modal
+    howToBtn.addEventListener('click', () => {
+      howToModal.style.display = 'flex';
+    });
+
+    // Close modal via X button
+    closeModalBtn.addEventListener('click', () => {
+      howToModal.style.display = 'none';
+    });
+
+    // Close modal by clicking anywhere outside the box
+    window.addEventListener('click', (e) => {
+      if (e.target === howToModal) {
+        howToModal.style.display = 'none';
+      }
+    });
+
+    // --- MAP INITIALIZATION LOGIC ---
     const southWest = L.latLng(0, -15);
     const northEast = L.latLng(55, 95);
-    const mapBounds = L.latLngBounds(southWest, northEast);
-
-    // 2. Initialize map locked inside specified boundaries
+    
     const map = L.map('map', {
-      maxBounds: mapBounds,
+      maxBounds: L.latLngBounds(southWest, northEast),
       maxBoundsViscosity: 1.0,
       minZoom: 4,
-      maxZoom: 13
-    }).setView([31.7683, 35.2137], 6); // Centered on Israel / Middle East
+      maxZoom: 18 
+    }).setView([31.7683, 35.2137], 6);
 
-    // 3. Add Shaded Relief Terrain (No base text labels, no modern political borders)
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}', {
       attribution: 'Tiles &copy; Esri',
-      maxZoom: 13
+      maxNativeZoom: 13, 
+      maxZoom: 18        
     }).addTo(map);
 
-    // 4. Fetch GeoJSON and attach PERMANENT labels to every location
-    fetch('bible_places.geojson')
+    fetch('./bible_places.geojson')
       .then(response => response.json())
       .then(geojsonData => {
+        
+        const allLabels = [];
+        const labelGroup = L.featureGroup().addTo(map);
+
         L.geoJSON(geojsonData, {
+          
+          style: function(feature) {
+            if (feature.properties.is_water) {
+              return {
+                color: '#9EBCD8',           
+                weight: 3,     
+                opacity: 0.9,
+                fillOpacity: 0            
+              };
+            }
+            return {
+              opacity: 0,
+              fillOpacity: 0,
+              weight: 0
+            };
+          },
+
+          pointToLayer: function(feature, latlng) {
+             return L.circleMarker(latlng, { opacity: 0, fillOpacity: 0, radius: 0 });
+          },
+
           onEachFeature: function (feature, layer) {
-            if (feature.properties && feature.properties.name) {
-              // Attach a permanent text label directly above each marker
-              layer.bindTooltip(feature.properties.name, {
-                permanent: true,            // Keeps label visible at all times
-                direction: 'top',           // Positions text above the marker
-                offset: [0, -10],           // Adjusts spacing slightly above the point
-                className: 'bible-place-label' // Applies the CSS styling above
-              });
+            const importance = feature.properties.importance;
+            const name = feature.properties.name;
+            const center = feature.properties.center; 
+
+            let fontSize = '12px';
+            let fontWeight = 'bold';
+            
+            if (importance === 1) { 
+              fontSize = '18px'; 
+              fontWeight = '900';
+            } else if (importance === 2) {
+              fontSize = '15px';
+              fontWeight = '800';
+            }
+
+            const marker = L.marker([center[1], center[0]], {
+              icon: L.divIcon({
+                className: 'map-place-label',
+                html: `<span style="font-size: ${fontSize}; font-weight: ${fontWeight};">${name}</span>`,
+                iconSize: null
+              }),
+              interactive: false
+            });
+            
+            marker.importance = importance;
+            allLabels.push(marker);
+
+            if (feature.properties.is_water) {
+              layer.addTo(map); 
             }
           }
-        }).addTo(map);
+
+        }).addTo(map); 
+
+        function updateLabels() {
+          const currentZoom = map.getZoom();
+          let maxAllowedRank = 3; 
+
+          if (currentZoom <= 6) {
+            maxAllowedRank = 1; 
+          } else if (currentZoom === 7) {
+            maxAllowedRank = 2; 
+          } else {
+            maxAllowedRank = 3; 
+          }
+
+          labelGroup.clearLayers();
+          allLabels.forEach(marker => {
+            if (marker.importance <= maxAllowedRank) {
+              labelGroup.addLayer(marker);
+            }
+          });
+        }
+
+        updateLabels();
+        map.on('zoomend', updateLabels);
       })
-      .catch(error => console.error('Error loading GeoJSON:', error));
+      .catch(err => console.error("Data load error:", err));
   </script>
 </body>
 </html>
