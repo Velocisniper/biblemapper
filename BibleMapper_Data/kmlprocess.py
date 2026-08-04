@@ -10,19 +10,26 @@ KML_PATH = REPO_ROOT / "all_bible_places.kml"
 CSV_PATH = REPO_ROOT / "TopBibleLocations - Sheet1.csv"
 OUTPUT_GEOJSON_PATH = REPO_ROOT / "bible_places.geojson"
 
-# Main Anchors (Rank 1)
+# Main Anchors (Rank 1 - Zoom <= 6)
 MAIN_ANCHORS = {
-    "egypt", "athens", "babylon", "judea", "judaea",
+    "egypt", "achaia", "babylon", "judea", "judaea",
     "cyprus", "crete", "rome", "asia", "assyria"
 }
 
-# Mid Anchors (Rank 2)
+# Mid Anchors (Rank 2 - Zoom 7)
 MID_ANCHORS = {
     "jerusalem", "samaria", "malta", "corinth", "patmos", 
     "ephesus", "colossae", "lystra", "galatia", "antioch", 
-    "damascus", "galilee", "shiloh", "dan", "beersheba", 
-    "philistia", "midian", "rameses", "persia", "ninevah",
-    "mediterranean sea", "dead sea" 
+    "damascus", "galilee", "dan", "beersheba", 
+    "midian", "rameses", "persia", "mediterranean sea", "athens", "macedonia"
+}
+
+# Regional/Secondary Anchors (Rank 3 - Zoom 8)
+RANK3_ANCHORS = {
+    "dead sea", "philistia", "shiloh", "syracuse", "rhodes", "tarsus", 
+    "euphrates river", "ninevah", "tigris river", "media", "moab", 
+    "edom", "jordan river", "tyre", "joppa", "jericho", "red sea", "amalek",
+    "sea of galilee", "thessalonica"
 }
 
 # Center overrides
@@ -53,12 +60,17 @@ def kml_to_geojson():
 
     csv_locations = {}
     
+    # Pre-populate anchors with their ranks
     for anchor in MAIN_ANCHORS:
         csv_locations[anchor] = {"display_name": anchor.title(), "importance": 1}
     for anchor in MID_ANCHORS:
         csv_locations[anchor] = {"display_name": anchor.title(), "importance": 2}
-        
-    csv_locations["sea of galilee"] = {"display_name": "Sea of Galilee", "importance": 3}
+    for anchor in RANK3_ANCHORS:
+        csv_locations[anchor] = {"display_name": anchor.title(), "importance": 3}
+
+    # Override for capitalization consistency
+    if "sea of galilee" in csv_locations:
+        csv_locations["sea of galilee"]["display_name"] = "Sea of Galilee"
 
     with open(CSV_PATH, 'r', encoding='utf-8') as f:
         reader = csv.reader(f)
@@ -71,8 +83,10 @@ def kml_to_geojson():
                     rank = 1
                 elif clean_csv in MID_ANCHORS:
                     rank = 2
+                elif clean_csv in RANK3_ANCHORS:
+                    rank = 3
                 else:
-                    rank = 3 
+                    rank = 4 # Everything else drops to the finest detail layer
                 
                 if clean_csv not in csv_locations:
                     csv_locations[clean_csv] = {
@@ -178,7 +192,7 @@ def kml_to_geojson():
         
         matched_csv_keys.add(matched_csv_key) 
 
-        # --- NEW GEOMETRY RANKING LOGIC ---
+        # --- GEOMETRY RANKING LOGIC ---
         should_update = False
         
         if final_name not in unique_names:
@@ -190,10 +204,8 @@ def kml_to_geojson():
             new_rank = GEOM_RANK.get(geom_type, 0)
             old_rank = GEOM_RANK.get(current_geom, 0)
             
-            # If the new shape is a "higher tier" (like a Polygon vs a Point), ALWAYS update
             if new_rank > old_rank:
                 should_update = True
-            # If they are the same tier of shape, fall back to using the text mentions as a tie-breaker
             elif new_rank == old_rank and mentions > current_mentions:
                 should_update = True
                 
@@ -232,17 +244,6 @@ def kml_to_geojson():
     print(f"✅ Consolidated {len(features)} uniquely named places from the CSV.")
     print(f"✅ Extracted full geometry boundaries for future game interactions.")
     print(f"✅ Saved to {OUTPUT_GEOJSON_PATH.name}!")
-
-    missing_places = set(csv_locations.keys()) - matched_csv_keys
-    if missing_places:
-        print("\n" + "!"*50)
-        print(f"⚠️  WARNING: {len(missing_places)} PLACES FROM YOUR CSV WERE NOT FOUND")
-        print("!"*50)
-        print("These places could not be matched to the KML data:")
-        for missing in sorted(missing_places):
-            print(f"  - {csv_locations[missing]['display_name']}")
-    else:
-        print("\n🎉 SUCCESS: All places in your CSV were successfully mapped!")
 
 if __name__ == "__main__":
     kml_to_geojson()

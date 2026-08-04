@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BibleMapper</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Turf.js for advanced spatial calculations -->
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 
   <style>
     body, html {
@@ -24,23 +27,20 @@
         0px  0px 3px #ffffff, 0px  0px 5px #ffffff;
     }
 
-    /* Start Menu Overlay Styling */
-    #start-menu {
+    /* Menu Overlays */
+    .menu-overlay {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0; width: 100%; height: 100%;
       background-color: #1e1e1e;
       z-index: 9998; 
       display: flex;
       flex-direction: column;
       align-items: center;
       padding-top: 8vh;
+      color: white;
     }
 
     #start-menu h1 {
-      color: #ffffff;
       text-transform: uppercase;
       font-size: 2.2rem;
       letter-spacing: 1px;
@@ -48,11 +48,12 @@
     }
 
     #start-menu img {
-      width: 240px; /* Doubled logo size */
+      width: 204px;
       height: auto;
       margin-bottom: 40px;
     }
 
+    /* Buttons */
     .menu-btn {
       width: 260px;
       padding: 16px;
@@ -63,99 +64,295 @@
       font-weight: bold;
       color: white;
       cursor: pointer;
+      text-decoration: none;
+      transition: background-color 0.2s;
     }
 
-    .btn-blue {
-      background-color: #265b8f; 
-      text-transform: uppercase;
-    }
+    .btn-blue { background-color: #265b8f; text-transform: uppercase; }
     .btn-blue:hover { background-color: #1e4b78; }
 
-    .btn-grey {
-      background-color: #444444; 
-      text-transform: uppercase;
-    }
+    .btn-grey { background-color: #444444; text-transform: uppercase; }
     .btn-grey:hover { background-color: #333333; }
 
-    .btn-daily {
-      background-color: #265b8f;
-      text-transform: none; 
-      margin-top: 5px;
-    }
+    .btn-daily { background-color: #265b8f; margin-top: 5px; }
     .btn-daily:hover { background-color: #1e4b78; }
-
-    /* How To Play Modal Styling */
-    #how-to-modal {
-      display: none; /* Hidden by default */
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.75);
-      z-index: 9999; /* Sits above the start menu */
-      align-items: center;
-      justify-content: center;
+    
+    /* Disabled State for Submit Button */
+    .btn-disabled {
+      background-color: #555555 !important;
+      color: #999999 !important;
+      cursor: not-allowed !important;
+      box-shadow: none !important;
     }
 
-    .modal-content {
+    /* Custom Game & Summary Menus */
+    #custom-menu, #summary-menu { display: none; }
+    
+    .settings-container {
       background-color: #2b2b2b;
-      color: #ffffff;
-      padding: 30px 40px;
+      padding: 30px;
       border-radius: 8px;
-      width: 80%;
-      max-width: 500px;
-      position: relative;
+      width: 320px;
+      margin-bottom: 30px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
 
+    .settings-container h2 {
+      margin-top: 0; text-align: center; margin-bottom: 20px;
+    }
+
+    .setting-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .setting-group label {
+      font-size: 1rem;
+    }
+
+    .setting-group select, .setting-group input[type="number"] {
+      padding: 5px;
+      background-color: #444;
+      color: white;
+      border: 1px solid #555;
+      border-radius: 4px;
+      width: 140px;
+    }
+    
+    .setting-group input[type="checkbox"] {
+      width: 20px; height: 20px;
+    }
+
+    /* How To Play Modal Styling */
+    #how-to-modal {
+      display: none;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background-color: rgba(0, 0, 0, 0.75);
+      z-index: 9999;
+      align-items: center; justify-content: center;
+    }
+
+    .modal-content {
+      background-color: #2b2b2b; color: #ffffff; padding: 30px 40px;
+      border-radius: 8px; width: 80%; max-width: 500px; position: relative;
+    }
+
     .close-btn {
-      position: absolute;
-      top: 15px;
-      right: 20px;
-      color: #aaaaaa;
-      font-size: 28px;
-      font-weight: bold;
-      cursor: pointer;
+      position: absolute; top: 15px; right: 20px; color: #aaaaaa;
+      font-size: 28px; font-weight: bold; cursor: pointer;
     }
     .close-btn:hover { color: #ffffff; }
+    .modal-content ul { padding-left: 20px; line-height: 1.6; font-size: 1.05rem; }
+    .modal-content li { margin-bottom: 12px; }
+    .credits { margin-top: 25px; font-style: italic; color: #aaaaaa; font-size: 0.9rem; }
 
-    .modal-content h2 {
-      margin-top: 0;
-      font-size: 1.5rem;
-      letter-spacing: 1px;
+    /* --- Scripture Modal Styling --- */
+    .scripture-modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
     }
 
-    .modal-content ul {
-      padding-left: 20px;
+    .scripture-modal-content {
+      background: #2b2b2b;
+      color: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      width: 80%;
+      max-width: 600px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .scripture-header {
+      display: flex;
+      justify-content: flex-end;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #444;
+      margin-bottom: 15px;
+    }
+
+    .chapter-text-container {
+      overflow-y: auto;
       line-height: 1.6;
-      font-size: 1.05rem;
+      padding-right: 10px;
     }
 
-    .modal-content li {
-      margin-bottom: 12px;
-    }
-
-    .credits {
-      margin-top: 25px;
-      font-style: italic;
+    .verse-number {
+      font-size: 0.8em;
+      vertical-align: super;
       color: #aaaaaa;
-      font-size: 0.9rem;
+      margin-right: 4px;
     }
 
+    .target-verse {
+      font-weight: bold;
+      background-color: rgba(255, 255, 255, 0.15);
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    /* --- Post-Submit Verse Reveal Box --- */
+    #verse-reveal-box {
+      display: none;
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #FFB949;
+      color: #000000;
+      z-index: 9000;
+      padding: 20px 30px;
+      border-radius: 8px;
+      width: 80%;
+      max-width: 650px;
+      text-align: center;
+      font-size: 1.15rem;
+      line-height: 1.5;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+      border: 2px solid #e09e30;
+    }
+    
+    #verse-reveal-box strong {
+      font-weight: 900;
+      font-size: 1.25rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .score-text {
+      display: block; 
+      margin-top: 15px; 
+      font-size: 1.3rem; 
+      font-weight: bold; 
+      color: #1a1a1a;
+      border-top: 1px solid rgba(0,0,0,0.2);
+      padding-top: 15px;
+    }
+
+    /* --- Timer Display --- */
+    #timer-display {
+      display: none;
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: #ffffff;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 1.7rem;
+      font-weight: bold;
+      z-index: 9000;
+      font-family: monospace;
+      border: 2px solid #555;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      transition: all 0.3s ease;
+    }
+
+    .timer-warning {
+      color: #ff4a4a !important;
+      border-color: #ff4a4a !important;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
   </style>
 </head>
 <body>
 
-  <!-- Start Menu Overlay -->
-  <div id="start-menu">
+  <!-- Start Menu -->
+  <div id="start-menu" class="menu-overlay">
     <h1>BibleMapper</h1>
-    
     <img src="logo.png" alt="BibleMapper Logo" onerror="this.style.display='none';">
-    
-    <button class="menu-btn btn-blue" id="btn-custom">Custom Game</button>
+    <button class="menu-btn btn-blue" id="btn-goto-custom">Custom Game</button>
     <button class="menu-btn btn-grey" id="btn-how-to">How to Play</button>
     <button class="menu-btn btn-daily" id="btn-daily">Play Daily Game</button>
+  </div>
+
+  <!-- Custom Game Menu -->
+  <div id="custom-menu" class="menu-overlay">
+    <div class="settings-container">
+      <h2>Custom Game</h2>
+      
+      <div class="setting-group">
+        <label for="setting-translation">Translation:</label>
+        <select id="setting-translation">
+          <option value="AMP">AMP</option>
+          <option value="ASV">ASV</option>
+          <option value="CPDV">CPDV</option>
+          <option value="ERV">ERV</option>
+          <option value="ESV" selected>ESV</option>
+          <option value="KJV">KJV</option>
+          <option value="NASB">NASB</option>
+          <option value="WEB">WEB</option>
+        </select>
+      </div>
+
+      <div class="setting-group">
+        <label for="setting-book">Book/Section:</label>
+        <select id="setting-book">
+          <option value="Entire Bible">Entire Bible</option>
+          <option value="Old Testament">Old Testament</option>
+          <option value="New Testament">New Testament</option>
+          <option value="Gospels">Gospels</option>
+          <option value="Acts">Acts</option>
+        </select>
+      </div>
+
+      <div class="setting-group">
+        <label for="setting-keyword">Show Location Name:</label>
+        <input type="checkbox" id="setting-keyword">
+      </div>
+
+      <div class="setting-group">
+        <label for="setting-labels">Show Map Labels:</label>
+        <input type="checkbox" id="setting-labels" checked>
+      </div>
+
+      <div class="setting-group">
+        <label for="setting-time">Time Limit:</label>
+        <select id="setting-time">
+          <option value="unlimited">Unlimited</option>
+          <option value="15">0:15s</option>
+          <option value="30">0:30s</option>
+          <option value="45">0:45s</option>
+          <option value="60">1m</option>
+          <option value="180">3m</option>
+          <option value="300">5m</option>
+        </select>
+      </div>
+
+      <div class="setting-group">
+        <label for="setting-rounds">Rounds (1-10):</label>
+        <input type="number" id="setting-rounds" min="1" max="10" value="3">
+      </div>
+    </div>
+
+    <button class="menu-btn btn-blue" id="btn-start-custom">Start Game</button>
+    <button class="menu-btn btn-grey" id="btn-back-main">Back to Menu</button>
+  </div>
+  
+  <!-- End of Game Summary Menu -->
+  <div id="summary-menu" class="menu-overlay">
+    <div class="settings-container" style="text-align: center;">
+      <h2>Game Complete!</h2>
+      <div id="summary-scores" style="margin-bottom: 20px; font-size: 1.2rem; line-height: 1.8;"></div>
+      <div id="summary-average" style="font-size: 1.5rem; font-weight: bold; margin-bottom: 30px; border-top: 1px solid #555; padding-top: 15px;"></div>
+      <button class="menu-btn btn-blue" id="btn-share" style="display: none; width: 100%; margin-bottom: 12px;">Share Result</button>
+      <button class="menu-btn btn-grey" id="btn-summary-home" style="width: 100%;">Back to Main Menu</button>
+    </div>
   </div>
 
   <!-- How To Play Modal -->
@@ -174,139 +371,44 @@
     </div>
   </div>
 
+  <!-- Timer Display -->
+  <div id="timer-display"></div>
+
+  <!-- Verse Reveal Box -->
+  <div id="verse-reveal-box"></div>
+
+  <!-- Button to reopen verse -->
+  <button id="reopen-verse-btn" class="menu-btn btn-blue" style="display: none; position: absolute; bottom: 80px; right: 20px; z-index: 1000; width: auto; padding: 10px 20px; margin: 0; box-shadow: 0 4px 6px rgba(0,0,0,0.3);" onclick="reopenScriptureWindow()">
+    View Verse
+  </button>
+
+  <!-- Submit Guess Button -->
+  <button id="submit-guess-btn" class="menu-btn btn-blue btn-disabled" disabled style="display: none; position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: auto; padding: 10px 30px; margin: 0; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    Submit Guess
+  </button>
+  
+  <!-- Next Round Button -->
+  <button id="next-round-btn" class="menu-btn btn-blue" style="display: none; position: absolute; bottom: 20px; right: 20px; z-index: 1000; width: auto; padding: 10px 25px; margin: 0; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    Next
+  </button>
+
+  <!-- The Scripture Window -->
+  <div id="scripture-modal" class="scripture-modal-overlay" style="display: none;">
+    <div class="scripture-modal-content">
+        <div class="scripture-header">
+            <button class="menu-btn btn-blue" style="width: auto; padding: 8px 20px; margin: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 0.9rem;" onclick="minimizeScriptureWindow()">
+                Minimize
+            </button>
+        </div>
+        <div id="chapter-text" class="chapter-text-container"></div>
+    </div>
+  </div>
+
   <!-- Map Container -->
   <div id="map"></div>
 
+  <!-- External Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  
-  <script>
-    // --- UI INTERACTION LOGIC ---
-    const howToBtn = document.getElementById('btn-how-to');
-    const howToModal = document.getElementById('how-to-modal');
-    const closeModalBtn = document.getElementById('close-modal');
-
-    // Open modal
-    howToBtn.addEventListener('click', () => {
-      howToModal.style.display = 'flex';
-    });
-
-    // Close modal via X button
-    closeModalBtn.addEventListener('click', () => {
-      howToModal.style.display = 'none';
-    });
-
-    // Close modal by clicking anywhere outside the box
-    window.addEventListener('click', (e) => {
-      if (e.target === howToModal) {
-        howToModal.style.display = 'none';
-      }
-    });
-
-    // --- MAP INITIALIZATION LOGIC ---
-    const southWest = L.latLng(0, -15);
-    const northEast = L.latLng(55, 95);
-    
-    const map = L.map('map', {
-      maxBounds: L.latLngBounds(southWest, northEast),
-      maxBoundsViscosity: 1.0,
-      minZoom: 4,
-      maxZoom: 18 
-    }).setView([31.7683, 35.2137], 6);
-
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles &copy; Esri',
-      maxNativeZoom: 13, 
-      maxZoom: 18        
-    }).addTo(map);
-
-    fetch('./bible_places.geojson')
-      .then(response => response.json())
-      .then(geojsonData => {
-        
-        const allLabels = [];
-        const labelGroup = L.featureGroup().addTo(map);
-
-        L.geoJSON(geojsonData, {
-          
-          style: function(feature) {
-            if (feature.properties.is_water) {
-              return {
-                color: '#9EBCD8',           
-                weight: 3,     
-                opacity: 0.9,
-                fillOpacity: 0            
-              };
-            }
-            return {
-              opacity: 0,
-              fillOpacity: 0,
-              weight: 0
-            };
-          },
-
-          pointToLayer: function(feature, latlng) {
-             return L.circleMarker(latlng, { opacity: 0, fillOpacity: 0, radius: 0 });
-          },
-
-          onEachFeature: function (feature, layer) {
-            const importance = feature.properties.importance;
-            const name = feature.properties.name;
-            const center = feature.properties.center; 
-
-            let fontSize = '12px';
-            let fontWeight = 'bold';
-            
-            if (importance === 1) { 
-              fontSize = '18px'; 
-              fontWeight = '900';
-            } else if (importance === 2) {
-              fontSize = '15px';
-              fontWeight = '800';
-            }
-
-            const marker = L.marker([center[1], center[0]], {
-              icon: L.divIcon({
-                className: 'map-place-label',
-                html: `<span style="font-size: ${fontSize}; font-weight: ${fontWeight};">${name}</span>`,
-                iconSize: null
-              }),
-              interactive: false
-            });
-            
-            marker.importance = importance;
-            allLabels.push(marker);
-
-            if (feature.properties.is_water) {
-              layer.addTo(map); 
-            }
-          }
-
-        }).addTo(map); 
-
-        function updateLabels() {
-          const currentZoom = map.getZoom();
-          let maxAllowedRank = 3; 
-
-          if (currentZoom <= 6) {
-            maxAllowedRank = 1; 
-          } else if (currentZoom === 7) {
-            maxAllowedRank = 2; 
-          } else {
-            maxAllowedRank = 3; 
-          }
-
-          labelGroup.clearLayers();
-          allLabels.forEach(marker => {
-            if (marker.importance <= maxAllowedRank) {
-              labelGroup.addLayer(marker);
-            }
-          });
-        }
-
-        updateLabels();
-        map.on('zoomend', updateLabels);
-      })
-      .catch(err => console.error("Data load error:", err));
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>
