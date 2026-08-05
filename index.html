@@ -297,13 +297,20 @@
             overflow-y: auto; /* Allows scrolling if menu content is tall */
         }
 
-        /* Move Submit and Next Round buttons to the bottom-right */
+        /* Set identical widths for Submit and Next buttons so they perfectly overlap */
         #submit-guess-btn, #next-round-btn {
             left: auto !important;
             right: 15px !important;
             transform: none !important;
             bottom: 25px !important; 
-            padding: 12px 20px !important;
+            padding: 12px 0 !important;
+            width: 150px !important;
+            text-align: center !important;
+        }
+
+        /* Ensure the Next button fully eclipses the disabled submit button beneath it */
+        #next-round-btn {
+            z-index: 1005 !important;
         }
 
         /* Move the "Reopen Verse" button to the bottom-left */
@@ -312,12 +319,15 @@
             right: auto !important;
             transform: none !important;
             bottom: 25px !important;
+            padding: 12px 0 !important;
+            width: 130px !important;
+            text-align: center !important;
         }
 
-        /* Shift the Verse Reveal result box up slightly so it doesn't overlap the new buttons */
+        /* Move the orange Summary Box back to the TOP, just below the timer */
         #verse-reveal-box {
-            top: auto !important; 
-            bottom: 85px !important; 
+            top: 80px !important; 
+            bottom: auto !important; 
             width: 90% !important;
             left: 5% !important;
             transform: none !important;
