@@ -214,7 +214,7 @@ btnDaily.addEventListener('click', () => {
         book: dailySection,
         showKeyword: false,
         showLabels: true,
-        timeLimit: '45',
+        timeLimit: '60',
         rounds: 3
     };
 
