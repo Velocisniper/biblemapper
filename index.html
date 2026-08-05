@@ -273,6 +273,18 @@
        MOBILE RESPONSIVE LAYOUT
        ========================================== */
     @media (max-width: 768px) {
+        /* Lock the page to prevent accidental scrolling while swiping on the map */
+        body, html {
+            position: fixed !important;
+            overflow: hidden !important;
+            width: 100%;
+            height: 100dvh !important;
+        }
+
+        #map {
+            height: 100dvh !important;
+        }
+
         /* Fix the main menu gray background not reaching the bottom */
         #start-menu, #custom-menu, #summary-menu {
             position: fixed !important;
