@@ -13,7 +13,7 @@ OUTPUT_GEOJSON_PATH = REPO_ROOT / "bible_places.geojson"
 # Main Anchors (Rank 1 - Zoom <= 6)
 MAIN_ANCHORS = {
     "egypt", "achaia", "babylon", "judea", "judaea",
-    "cyprus", "crete", "rome", "asia", "assyria"
+    "cyprus", "crete", "rome", "asia", "assyria", "persia"
 }
 
 # Mid Anchors (Rank 2 - Zoom 7)
@@ -21,20 +21,19 @@ MID_ANCHORS = {
     "jerusalem", "samaria", "malta", "corinth", "patmos", 
     "ephesus", "colossae", "lystra", "galatia", "antioch", 
     "damascus", "galilee", "dan", "beersheba", 
-    "midian", "rameses", "persia", "mediterranean sea", "athens", "macedonia"
+    "midian", "rameses", "mediterranean sea", "athens", "macedonia"
 }
 
 # Regional/Secondary Anchors (Rank 3 - Zoom 8)
 RANK3_ANCHORS = {
     "dead sea", "philistia", "shiloh", "syracuse", "rhodes", "tarsus", 
-    "euphrates river", "ninevah", "tigris river", "media", "moab", 
+    "euphrates river", "nineveh", "tigris river", "media", "moab", 
     "edom", "jordan river", "tyre", "joppa", "jericho", "red sea", "amalek",
     "sea of galilee", "thessalonica"
 }
 
 # Center overrides
-MANUAL_OVERRIDES = {
-    "egypt": [30.0000, 27.0000],          
+MANUAL_OVERRIDES = {     
     "sea of galilee": [35.5800, 32.8000],
     "mediterranean sea": [23.7000, 34.5000], 
     "dead sea": [35.4800, 31.6500],
@@ -117,7 +116,9 @@ def kml_to_geojson():
         if clean_kml in MANUAL_OVERRIDES and clean_kml in csv_locations:
             matched_csv_key = clean_kml
         else:
-            for csv_key in csv_locations.keys():
+            # Sort keys by length descending so "sea of galilee" is checked before "galilee"
+            sorted_keys = sorted(csv_locations.keys(), key=len, reverse=True)
+            for csv_key in sorted_keys:
                 if re.search(rf'\b{re.escape(csv_key)}\b', clean_kml):
                     matched_csv_key = csv_key
                     break
