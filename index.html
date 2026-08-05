@@ -268,6 +268,74 @@
       50% { transform: scale(1.05); }
       100% { transform: scale(1); }
     }
+
+    /* ==========================================
+       MOBILE RESPONSIVE LAYOUT
+       ========================================== */
+    @media (max-width: 768px) {
+        /* Fix the main menu gray background not reaching the bottom */
+        #start-menu, #custom-menu, #summary-menu {
+            position: fixed !important;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 100% !important;
+            height: 100dvh !important; /* Modern fix for mobile browser URL bars */
+            overflow-y: auto; /* Allows scrolling if menu content is tall */
+        }
+
+        /* Move Submit and Next Round buttons to the bottom-right */
+        #submit-guess-btn, #next-round-btn {
+            left: auto !important;
+            right: 15px !important;
+            transform: none !important;
+            bottom: 25px !important; 
+            padding: 12px 20px !important;
+        }
+
+        /* Move the "Reopen Verse" button to the bottom-left */
+        #reopen-verse-btn {
+            left: 15px !important;
+            right: auto !important;
+            transform: none !important;
+            bottom: 25px !important;
+        }
+
+        /* Shift the Verse Reveal result box up slightly so it doesn't overlap the new buttons */
+        #verse-reveal-box {
+            top: auto !important; 
+            bottom: 85px !important; 
+            width: 90% !important;
+            left: 5% !important;
+            transform: none !important;
+            box-sizing: border-box;
+            font-size: 14px !important;
+        }
+
+        /* Pull the timer down slightly so mobile camera notches don't hide it */
+        #timer-display {
+            top: 15px !important;
+            right: 15px !important;
+            font-size: 18px !important;
+        }
+
+        /* Ensure the scripture reading modal fits perfectly on small screens */
+        #scripture-modal {
+            padding: 10px !important;
+        }
+        
+        .scripture-modal-content {
+            width: 95% !important;
+            max-width: 100% !important;
+        }
+        
+        /* Scale down map zoom controls on mobile so they take up less space */
+        .leaflet-control-zoom {
+            transform: scale(0.85);
+            transform-origin: top left;
+        }
+    }
   </style>
 </head>
 <body>
