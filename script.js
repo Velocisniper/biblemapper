@@ -816,7 +816,7 @@ fetch('./bible_places.geojson')
                                                         'map-place-label',
 
                                                     html:
-                                                        `<span style="font-size: ${fontSize}; font-weight: ${fontWeight};">${scriptureName}</span>`,
+                                                        `<span style="font-size: ${fontSize}; font-weight: ${fontWeight};">${internalName}</span>`,
 
                                                     iconSize:
                                                         null
