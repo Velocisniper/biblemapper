@@ -2887,42 +2887,9 @@ function openScriptureWindow(
                     "";
 
 
-                let textToDisplay =
+                let rawText =
                     (verse.text || "") +
                     " ";
-
-
-                if (
-                    !activeSettings.showKeyword &&
-                    matchedWord
-                ) {
-
-                    const escaped =
-                        matchedWord.replace(
-                            /[.*+?^${}()|[\]\\]/g,
-                            '\\$&'
-                        );
-
-
-                    const regex =
-                        new RegExp(
-                            `\\b${escaped}\\b`,
-                            'gi'
-                        );
-
-
-                    textToDisplay =
-                        textToDisplay.replace(
-                            regex,
-                            '_____'
-                        );
-                }
-
-
-                const verseText =
-                    document.createTextNode(
-                        textToDisplay
-                    );
 
 
                 verseSpan.appendChild(
@@ -2930,9 +2897,57 @@ function openScriptureWindow(
                 );
 
 
-                verseSpan.appendChild(
-                    verseText
-                );
+                if (matchedWord) {
+
+                    const escaped =
+                        matchedWord.replace(
+                            /[.*+?^${}()|[\]\\]/g,
+                            '\\$&'
+                        );
+
+                    const regex =
+                        new RegExp(
+                            `\\b${escaped}\\b`,
+                            'gi'
+                        );
+
+                    if (activeSettings.showKeyword) {
+
+                        // Show the location but underline it
+                        // so the player knows which word to find.
+                        const htmlText =
+                            rawText.replace(
+                                regex,
+                                '<u><strong>$&</strong></u>'
+                            );
+
+                        const wrapper =
+                            document.createElement('span');
+
+                        wrapper.innerHTML = htmlText;
+
+                        verseSpan.appendChild(wrapper);
+
+                    } else {
+
+                        // Blank the location name.
+                        const blanked =
+                            rawText.replace(
+                                regex,
+                                '_____'
+                            );
+
+                        verseSpan.appendChild(
+                            document.createTextNode(blanked)
+                        );
+                    }
+
+                } else {
+
+                    verseSpan.appendChild(
+                        document.createTextNode(rawText)
+                    );
+                }
 
 
                 if (
