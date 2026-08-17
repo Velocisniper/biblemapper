@@ -112,6 +112,7 @@ let activeSettings = {
 let totalRounds = 3;
 let currentRound = 1;
 let roundScores = [];
+let usedLocationsThisGame = new Set();
 let guessSubmitted = false;
 
 let dailyDateString = "";
@@ -426,6 +427,8 @@ btnStartCustom.addEventListener(
 
         roundScores = [];
 
+        usedLocationsThisGame = new Set();
+
         customMenu.style.display = 'none';
 
         updateLabels();
@@ -494,6 +497,8 @@ btnDaily.addEventListener(
         currentRound = 1;
 
         roundScores = [];
+
+        usedLocationsThisGame = new Set();
 
         startMenu.style.display = 'none';
 
@@ -1706,15 +1711,28 @@ function processAndDisplayScripture(
     }
 
 
+    // Filter out locations already used this game, but only if doing
+    // so doesn't leave us with nothing (e.g. a very small section).
+    const unusedVerses =
+        validVerses.filter(
+            v => !usedLocationsThisGame.has(v.internalName)
+        );
+
+    const versePool =
+        unusedVerses.length > 0
+            ? unusedVerses
+            : validVerses;
+
+
     const randomIndex =
         Math.floor(
             seededRandom() *
-            validVerses.length
+            versePool.length
         );
 
 
     const selection =
-        validVerses[
+        versePool[
             randomIndex
         ];
 
@@ -1769,6 +1787,10 @@ function processAndDisplayScripture(
     // SET TARGET
     // ==========================================
 
+    usedLocationsThisGame.add(
+        selection.internalName
+    );
+
     currentTargetLocation =
         selection.internalName;
 
@@ -1781,12 +1803,15 @@ function processAndDisplayScripture(
         selection.targetVerse.text;
 
 
+    // Build reference from randomBook.id (clean, e.g. "1CO") and
+    // the chapter ID field which looks like "NT:1CO.3" — extract
+    // the chapter number from the part after the dot.
+    const chapterNum = (selection.chapterData.ID || "").split(".").pop();
+    const verseNum   = selection.targetVerse.ID || "";
     currentTargetReference =
-        getVerseReference(
-            bookData,
-            selection.chapterData,
-            selection.targetVerse
-        );
+        (randomBook.id && chapterNum && verseNum)
+            ? `${randomBook.id} ${chapterNum}:${verseNum}`
+            : null;
 
 
     openScriptureWindow(
@@ -2502,6 +2527,9 @@ function showResult(
     verseRevealBox.innerHTML =
         `
         "${revealedText}"
+        <span style="display:block; margin-top:10px; font-size:0.9rem; font-style:italic; opacity:0.75;">
+            — ${currentTargetReference || ''}
+        </span>
         <span class="score-text">
             ${distText}
             &nbsp;|&nbsp;
