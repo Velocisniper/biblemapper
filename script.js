@@ -1514,7 +1514,7 @@ function findPlayableVerse(
     // applies to the frequency path.
     // ==========================================
 
-    const biasRoll = Math.floor(Math.random() * 100);
+    const biasRoll = Math.floor(seededRandom() * 100);
     const useLocationMethod =
         biasRoll < (activeSettings.locationBias || 0);
 
