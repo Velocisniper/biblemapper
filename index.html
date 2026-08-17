@@ -358,6 +358,32 @@
             transform-origin: top left;
         }
     }
+
+    /* Randomness Profile Slider */
+    .slider-setting-group {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 15px;
+    }
+
+    .slider-setting-group .slider-heading {
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #aaaaaa;
+      margin-bottom: 4px;
+    }
+
+    #setting-bias {
+      width: 100%;
+      accent-color: #265b8f;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -396,8 +422,6 @@
           <option value="Entire Bible">Entire Bible</option>
           <option value="Old Testament">Old Testament</option>
           <option value="New Testament">New Testament</option>
-          <option value="Torah">Torah</option>
-          <option value="Historical Books">Historical Books</option>
           <option value="Gospels">Gospels</option>
           <option value="Acts">Acts</option>
         </select>
@@ -429,6 +453,15 @@
       <div class="setting-group">
         <label for="setting-rounds">Rounds (1-10):</label>
         <input type="number" id="setting-rounds" min="1" max="10" value="3">
+      </div>
+
+      <div class="slider-setting-group">
+        <label class="slider-heading">Randomness Profile:</label>
+        <div class="slider-labels">
+          <span>By Frequency</span>
+          <span>By Location</span>
+        </div>
+        <input type="range" id="setting-bias" min="0" max="100" value="50">
       </div>
     </div>
 

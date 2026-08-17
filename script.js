@@ -273,7 +273,10 @@ const inputs = {
         document.getElementById('setting-time'),
 
     rounds:
-        document.getElementById('setting-rounds')
+        document.getElementById('setting-rounds'),
+
+    bias:
+        document.getElementById('setting-bias')
 };
 
 
@@ -306,6 +309,10 @@ function loadSettings() {
     if (localStorage.getItem('bm_rounds'))
         inputs.rounds.value =
             localStorage.getItem('bm_rounds');
+
+    if (localStorage.getItem('bm_bias'))
+        inputs.bias.value =
+            localStorage.getItem('bm_bias');
 }
 
 
@@ -350,6 +357,11 @@ function saveSettings() {
     localStorage.setItem(
         'bm_rounds',
         r
+    );
+
+    localStorage.setItem(
+        'bm_bias',
+        inputs.bias.value
     );
 }
 
@@ -417,7 +429,10 @@ btnStartCustom.addEventListener(
                 inputs.time.value,
 
             rounds:
-                parseInt(inputs.rounds.value)
+                parseInt(inputs.rounds.value),
+
+            locationBias:
+                parseInt(inputs.bias.value)
         };
 
         totalRounds =
@@ -488,7 +503,9 @@ btnDaily.addEventListener(
             // DAILY GAME = 90 SECONDS
             timeLimit: '90',
 
-            rounds: 3
+            rounds: 3,
+
+            locationBias: 50
         };
 
         totalRounds =
@@ -1481,6 +1498,55 @@ function findPlayableVerse(
     }
 
 
+    // ==========================================
+    // RANDOMNESS PROFILE
+    //
+    // Roll 1-100. If the roll falls within
+    // locationBias (0-100), use the "by location"
+    // method: pick a random mapped location that
+    // has references in this section, then load
+    // one of those reference verses directly.
+    //
+    // Otherwise use the "by frequency" method:
+    // pick a random book and scan all verses,
+    // which naturally favours places with many
+    // mentions. The Jerusalem 60% skip only
+    // applies to the frequency path.
+    // ==========================================
+
+    const biasRoll = Math.floor(Math.random() * 100);
+    const useLocationMethod =
+        biasRoll < (activeSettings.locationBias || 0);
+
+    if (useLocationMethod) {
+
+        findPlayableVerseByLocation(
+            sectionName,
+            translation,
+            attempts
+        );
+
+    } else {
+
+        findPlayableVerseByFrequency(
+            sectionName,
+            translation,
+            attempts
+        );
+    }
+}
+
+
+// ==========================================
+// BY FREQUENCY: original book-first method
+// ==========================================
+
+function findPlayableVerseByFrequency(
+    sectionName,
+    translation,
+    attempts
+) {
+
     const sectionBooks =
         bibleStructure[
             sectionName
@@ -1521,7 +1587,8 @@ function findPlayableVerse(
                 if (
                     !processAndDisplayScripture(
                         bookData,
-                        randomBook
+                        randomBook,
+                        false  // applyJerusalemSkip = true (default)
                     )
                 ) {
 
@@ -1547,12 +1614,183 @@ function findPlayableVerse(
 
 
 // ==========================================
+// BY LOCATION: pick a location, then a verse
+// ==========================================
+
+function findPlayableVerseByLocation(
+    sectionName,
+    translation,
+    attempts
+) {
+
+    const sectionBooks =
+        bibleStructure[
+            sectionName
+        ] ||
+        bibleStructure["Acts"];
+
+
+    // Build the set of book IDs in this section
+    // so we can filter location references.
+    const sectionBookIds = new Set(
+        sectionBooks.map(b => b.id)
+    );
+
+
+    // Gather all location features that have at
+    // least one reference verse in this section
+    // and haven't been used this game yet.
+    const candidateLocations = Object.keys(locationFeatures)
+        .filter(internalName => {
+
+            if (usedLocationsThisGame.has(internalName))
+                return false;
+
+            const refs =
+                locationFeatures[internalName]
+                    .properties.references || [];
+
+            return refs.some(ref => {
+                const bookId = ref.split(' ')[0];
+                return sectionBookIds.has(bookId);
+            });
+        });
+
+
+    if (candidateLocations.length === 0) {
+
+        // Fall back to frequency method
+        findPlayableVerseByFrequency(
+            sectionName,
+            translation,
+            attempts
+        );
+
+        return;
+    }
+
+
+    // Pick a random location from the candidates.
+    const randomInternalName =
+        candidateLocations[
+            Math.floor(
+                seededRandom() *
+                candidateLocations.length
+            )
+        ];
+
+
+    const feature = locationFeatures[randomInternalName];
+
+
+    // Filter that location's references to only
+    // those in the current section, then pick one.
+    const sectionRefs = (feature.properties.references || [])
+        .filter(ref => {
+            const bookId = ref.split(' ')[0];
+            return sectionBookIds.has(bookId);
+        });
+
+
+    if (sectionRefs.length === 0) {
+
+        findPlayableVerse(
+            sectionName,
+            translation,
+            attempts + 1
+        );
+
+        return;
+    }
+
+
+    const randomRef =
+        sectionRefs[
+            Math.floor(
+                seededRandom() *
+                sectionRefs.length
+            )
+        ];
+
+
+    // Parse the reference: e.g. "ACT 11:19"
+    const refParts = randomRef.split(' ');
+    const bookId = refParts[0];
+    const chapterVerse = (refParts[1] || '').split(':');
+    const targetChapter = parseInt(chapterVerse[0]);
+    const targetVerse  = parseInt(chapterVerse[1]);
+
+
+    // Find which book entry matches this bookId
+    const bookEntry =
+        sectionBooks.find(b => b.id === bookId);
+
+    if (!bookEntry) {
+
+        findPlayableVerse(
+            sectionName,
+            translation,
+            attempts + 1
+        );
+
+        return;
+    }
+
+
+    const filePath =
+        `./BibleMapper_Data/${bookEntry.testament}/${bookEntry.id}/${translation}.json`;
+
+
+    fetch(filePath)
+        .then(response => {
+
+            if (!response.ok)
+                throw new Error(`HTTP ${response.status}`);
+
+            return response.json();
+        })
+        .then(bookData => {
+
+            if (
+                !processAndDisplayScripture(
+                    bookData,
+                    bookEntry,
+                    true,           // skipJerusalemRule = skip the 60% rule
+                    randomInternalName,
+                    targetChapter,
+                    targetVerse
+                )
+            ) {
+
+                findPlayableVerse(
+                    sectionName,
+                    translation,
+                    attempts + 1
+                );
+            }
+        })
+        .catch(() => {
+
+            findPlayableVerse(
+                sectionName,
+                translation,
+                attempts + 1
+            );
+        });
+}
+
+
+// ==========================================
 // PROCESS SCRIPTURE
 // ==========================================
 
 function processAndDisplayScripture(
     bookData,
-    randomBook
+    randomBook,
+    skipJerusalemRule = false,
+    forceInternalName = null,
+    forceChapter = null,
+    forceVerse = null
 ) {
 
     let validVerses = [];
@@ -1724,25 +1962,67 @@ function processAndDisplayScripture(
             : validVerses;
 
 
-    const randomIndex =
-        Math.floor(
-            seededRandom() *
-            versePool.length
+    // ==========================================
+    // BY-LOCATION PATH: use the pre-chosen
+    // location and verse reference directly,
+    // bypassing the random pool pick.
+    // ==========================================
+
+    let selection;
+
+    if (forceInternalName !== null) {
+
+        // Find this verse in validVerses by matching
+        // the forced internalName and chapter/verse.
+        const forced = validVerses.find(v =>
+            v.internalName === forceInternalName &&
+            (forceChapter === null ||
+                parseInt((v.chapterData.ID || '').split('.').pop()) === forceChapter) &&
+            (forceVerse === null ||
+                parseInt(v.targetVerse.ID) === forceVerse)
         );
 
+        if (!forced) {
 
-    const selection =
-        versePool[
-            randomIndex
-        ];
+            // The exact verse wasn't found in validVerses
+            // (maybe the word doesn't appear in that verse
+            // in this translation). Fall back to any verse
+            // for this location in this book.
+            const anyForced = validVerses.find(
+                v => v.internalName === forceInternalName
+            );
+
+            if (!anyForced) return false;
+
+            selection = anyForced;
+
+        } else {
+
+            selection = forced;
+        }
+
+    } else {
+
+        const randomIndex =
+            Math.floor(
+                seededRandom() *
+                versePool.length
+            );
+
+        selection =
+            versePool[
+                randomIndex
+            ];
+    }
 
 
     // ==========================================
     // JERUSALEM SKIP
-    // 60% CHANCE TO SKIP
+    // 60% CHANCE TO SKIP (frequency path only)
     // ==========================================
 
     if (
+        !skipJerusalemRule &&
         selection.matchedWord ===
         "jerusalem"
     ) {
