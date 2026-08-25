@@ -20,7 +20,7 @@ MAIN_ANCHORS = {
 
 # Mid Anchors (Rank 2 - Zoom 7)
 MID_ANCHORS = {
-    "jerusalem", "samaria", "malta", "corinth", "patmos", "achaia",
+    "jerusalem", "samaria", "malta", "patmos", "achaia",
     "ephesus", "colossae", "lystra", "galatia", "antioch (syria)", 
     "damascus", "galilee", "dan", "beersheba", 
     "midian", "rameses", "mediterranean sea", "athens", "macedonia",
@@ -32,7 +32,7 @@ RANK3_ANCHORS = {
     "dead sea", "philistia", "shiloh", "syracuse", "rhodes", "tarsus", 
     "euphrates river", "nineveh", "tigris river", "antioch (pisidia)", "moab", 
     "edom", "jordan river", "tyre", "joppa", "jericho", "red sea", "amalek",
-    "sea of galilee", "thessalonica", "bethel"
+    "sea of galilee", "thessalonica", "bethel", "corinth"
 }
 
 # Center overrides
@@ -43,7 +43,8 @@ MANUAL_OVERRIDES = {
     "judaea": [35.1000, 31.6500],
     "judea": [35.1000, 31.6500], 
     "gomorrah": [35.42604,31.0904],
-    "valley of siddim": [35.42604,31.1504]
+    "valley of siddim": [35.42604,31.1504],
+    "bethel": [35.241389,31.952778]
 }
 
 # Hierarchy of shapes: We ALWAYS want a Polygon or Line over a Point
