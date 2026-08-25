@@ -24,7 +24,7 @@ MID_ANCHORS = {
     "ephesus", "colossae", "lystra", "galatia", "antioch (syria)", 
     "damascus", "galilee", "dan", "beersheba", 
     "midian", "rameses", "mediterranean sea", "athens", "macedonia",
-    "pisidia"
+    "pisidia", "cyrene"
 }
 
 # Regional/Secondary Anchors (Rank 3 - Zoom 8)
