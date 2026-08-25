@@ -94,7 +94,6 @@ const bibleStructure = {
 // GLOBAL DATA STRUCTURES
 // ==========================================
 
-let validMapLocations = [];
 let locationCoordinates = {};
 let locationFeatures = {};
 let locationScriptureNames = {};
@@ -787,18 +786,6 @@ fetch('./bible_places.geojson')
                                 locationScriptureNames[
                                     internalLower
                                 ] = scriptureLower;
-
-
-                                if (
-                                    !validMapLocations.includes(
-                                        scriptureLower
-                                    )
-                                ) {
-
-                                    validMapLocations.push(
-                                        scriptureLower
-                                    );
-                                }
                             }
 
 
@@ -1038,336 +1025,7 @@ function updateTimerDisplay() {
 }
 
 
-// ==========================================
-// SCRIPTURE REFERENCE HELPERS
-// ==========================================
 
-function getVerseReference(
-    bookData,
-    chapter,
-    verse
-) {
-
-    const bookId =
-        bookData.id ||
-        bookData.book ||
-        "";
-
-
-    const chapterNumber =
-        chapter.chapter ||
-        chapter.number ||
-        chapter.id ||
-        "";
-
-
-    const verseNumber =
-        verse.ID ||
-        verse.id ||
-        verse.number ||
-        "";
-
-
-    if (
-        !bookId ||
-        !chapterNumber ||
-        !verseNumber
-    ) {
-
-        return null;
-    }
-
-
-    return `${bookId} ${chapterNumber}:${verseNumber}`;
-}
-
-
-// ==========================================
-// REFERENCE RANGE MATCHING
-// ==========================================
-
-function referenceMatchesVerse(
-    reference,
-    bookId,
-    chapterNumber,
-    verseNumber
-) {
-
-    if (!reference)
-        return false;
-
-
-    const cleaned =
-        reference
-            .toUpperCase()
-            .replace(/\s+/g, '')
-            .replace(/[–—]/g, '-');
-
-
-    const targetBook =
-        String(bookId).toUpperCase();
-
-
-    const targetChapter =
-        parseInt(
-            chapterNumber
-        );
-
-
-    const targetVerse =
-        parseInt(
-            verseNumber
-        );
-
-
-    /*
-     * Examples:
-     *
-     * ACT 11:19
-     * ACT 13:14
-     * JDG 8:5-16
-     */
-
-    const match =
-        cleaned.match(
-            /^(.+?)(\d+):(\d+)(?:-(?:(\d+):)?(\d+))?$/
-        );
-
-
-    if (!match)
-        return false;
-
-
-    const refBook =
-        match[1];
-
-
-    const startChapter =
-        parseInt(match[2]);
-
-
-    const startVerse =
-        parseInt(match[3]);
-
-
-    const endChapter =
-        match[4]
-            ? parseInt(match[4])
-            : startChapter;
-
-
-    const endVerse =
-        match[5]
-            ? parseInt(match[5])
-            : startVerse;
-
-
-    if (
-        refBook !== targetBook
-    ) {
-
-        return false;
-    }
-
-
-    if (
-        targetChapter < startChapter ||
-        targetChapter > endChapter
-    ) {
-
-        return false;
-    }
-
-
-    if (
-        startChapter === endChapter
-    ) {
-
-        return (
-            targetChapter === startChapter &&
-            targetVerse >= startVerse &&
-            targetVerse <= endVerse
-        );
-    }
-
-
-    if (
-        targetChapter === startChapter
-    ) {
-
-        return targetVerse >= startVerse;
-    }
-
-
-    if (
-        targetChapter === endChapter
-    ) {
-
-        return targetVerse <= endVerse;
-    }
-
-
-    return true;
-}
-
-
-// ==========================================
-// FEATURE / VERSE MATCHING
-// ==========================================
-
-function featureMatchesVerse(
-    feature,
-    bookData,
-    chapter,
-    verse
-) {
-
-    if (
-        !feature ||
-        !feature.properties
-    ) {
-
-        return false;
-    }
-
-
-    const references =
-        feature.properties.references;
-
-
-    if (
-        !Array.isArray(references) ||
-        references.length === 0
-    ) {
-
-        return false;
-    }
-
-
-    const bookId =
-        bookData.id ||
-        bookData.book ||
-        "";
-
-
-    const chapterNumber =
-        chapter.chapter ||
-        chapter.number ||
-        chapter.id ||
-        "";
-
-
-    const verseNumber =
-        verse.ID ||
-        verse.id ||
-        verse.number ||
-        "";
-
-
-    return references.some(
-        reference =>
-            referenceMatchesVerse(
-                reference,
-                bookId,
-                chapterNumber,
-                verseNumber
-            )
-    );
-}
-
-
-// ==========================================
-// RESOLVE AMBIGUOUS LOCATIONS
-// ==========================================
-
-function resolveLocationFeature(
-    scriptureName,
-    bookData,
-    chapter,
-    verse
-) {
-
-    const candidates = [];
-
-
-    Object.keys(
-        locationFeatures
-    ).forEach(
-        internalName => {
-
-            const feature =
-                locationFeatures[
-                    internalName
-                ];
-
-
-            const featureScriptureName =
-                locationScriptureNames[
-                    internalName
-                ];
-
-
-            if (
-                featureScriptureName ===
-                scriptureName
-            ) {
-
-                candidates.push(
-                    feature
-                );
-            }
-        }
-    );
-
-
-    if (
-        candidates.length === 0
-    ) {
-
-        return null;
-    }
-
-
-    /*
-     * Normal location:
-     * only one geographic feature.
-     */
-
-    if (
-        candidates.length === 1
-    ) {
-
-        return candidates[0];
-    }
-
-
-    /*
-     * Ambiguous location:
-     * use KML-derived references.
-     */
-
-    const matching =
-        candidates.filter(
-            feature =>
-                featureMatchesVerse(
-                    feature,
-                    bookData,
-                    chapter,
-                    verse
-                )
-        );
-
-
-    if (
-        matching.length > 0
-    ) {
-
-        return matching[0];
-    }
-
-
-    return null;
-}
 
 
 // ==========================================
@@ -1491,7 +1149,7 @@ function findPlayableVerse(
 
 
     if (
-        validMapLocations.length === 0
+        Object.keys(locationFeatures).length === 0
     ) {
 
         return;
@@ -1503,15 +1161,19 @@ function findPlayableVerse(
     //
     // Roll 1-100. If the roll falls within
     // locationBias (0-100), use the "by location"
-    // method: pick a random mapped location that
-    // has references in this section, then load
-    // one of those reference verses directly.
+    // method: pick a random mapped location (equal
+    // weight) then pick one of its KML-vetted
+    // references.
     //
     // Otherwise use the "by frequency" method:
-    // pick a random book and scan all verses,
-    // which naturally favours places with many
-    // mentions. The Jerusalem 60% skip only
+    // build a pool of every (location, ref) pair
+    // in this section and pick uniformly. Locations
+    // with many references appear proportionally
+    // more often. The Jerusalem 60% skip only
     // applies to the frequency path.
+    //
+    // Both paths use KML references exclusively —
+    // no verse-text scanning.
     // ==========================================
 
     const biasRoll = Math.floor(seededRandom() * 100);
@@ -1538,7 +1200,12 @@ function findPlayableVerse(
 
 
 // ==========================================
-// BY FREQUENCY: original book-first method
+// BY FREQUENCY: reference-pool method
+//
+// Build every (feature, ref) pair for this
+// section. Each pair is one entry, so a
+// location with 100 refs appears 100× more
+// often than one with 1 ref. Pick uniformly.
 // ==========================================
 
 function findPlayableVerseByFrequency(
@@ -1548,68 +1215,111 @@ function findPlayableVerseByFrequency(
 ) {
 
     const sectionBooks =
-        bibleStructure[
-            sectionName
-        ] ||
+        bibleStructure[sectionName] ||
         bibleStructure["Acts"];
 
+    const sectionBookIds = new Set(
+        sectionBooks.map(b => b.id)
+    );
 
-    const randomBook =
-        sectionBooks[
-            Math.floor(
-                seededRandom() *
-                sectionBooks.length
-            )
+    // Build flat pool of {feature, ref, bookEntry} objects.
+    const pool = [];
+
+    Object.keys(locationFeatures).forEach(internalName => {
+
+        if (usedLocationsThisGame.has(internalName))
+            return;
+
+        const feature = locationFeatures[internalName];
+        const refs = feature.properties.references || [];
+
+        refs.forEach(ref => {
+
+            const bookId = ref.split(' ')[0];
+
+            if (!sectionBookIds.has(bookId))
+                return;
+
+            const bookEntry = sectionBooks.find(b => b.id === bookId);
+
+            if (!bookEntry)
+                return;
+
+            pool.push({ feature, ref, bookEntry, internalName });
+        });
+    });
+
+
+    if (pool.length === 0) {
+
+        // No unused locations — retry without the used-location filter.
+        const fallbackPool = [];
+
+        Object.keys(locationFeatures).forEach(internalName => {
+
+            const feature = locationFeatures[internalName];
+            const refs = feature.properties.references || [];
+
+            refs.forEach(ref => {
+
+                const bookId = ref.split(' ')[0];
+
+                if (!sectionBookIds.has(bookId))
+                    return;
+
+                const bookEntry = sectionBooks.find(b => b.id === bookId);
+
+                if (!bookEntry)
+                    return;
+
+                fallbackPool.push({ feature, ref, bookEntry, internalName });
+            });
+        });
+
+        if (fallbackPool.length === 0) {
+
+            alert(
+                "Could not find a verse with a map location in this section. Please try a different book."
+            );
+
+            return;
+        }
+
+        const pick =
+            fallbackPool[
+                Math.floor(seededRandom() * fallbackPool.length)
+            ];
+
+        loadAndDisplayVerseFromRef(
+            pick.feature,
+            pick.ref,
+            pick.bookEntry,
+            pick.internalName,
+            sectionName,
+            translation,
+            attempts,
+            false   // apply Jerusalem skip on frequency path
+        );
+
+        return;
+    }
+
+
+    const pick =
+        pool[
+            Math.floor(seededRandom() * pool.length)
         ];
 
-
-    const filePath =
-        `./BibleMapper_Data/${randomBook.testament}/${randomBook.id}/${translation}.json`;
-
-
-    fetch(filePath)
-        .then(
-            response => {
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        `HTTP ${response.status}`
-                    );
-                }
-
-                return response.json();
-            }
-        )
-        .then(
-            bookData => {
-
-                if (
-                    !processAndDisplayScripture(
-                        bookData,
-                        randomBook,
-                        false  // applyJerusalemSkip = true (default)
-                    )
-                ) {
-
-                    findPlayableVerse(
-                        sectionName,
-                        translation,
-                        attempts + 1
-                    );
-                }
-            }
-        )
-        .catch(
-            err => {
-
-                findPlayableVerse(
-                    sectionName,
-                    translation,
-                    attempts + 1
-                );
-            }
-        );
+    loadAndDisplayVerseFromRef(
+        pick.feature,
+        pick.ref,
+        pick.bookEntry,
+        pick.internalName,
+        sectionName,
+        translation,
+        attempts,
+        false   // apply Jerusalem skip on frequency path
+    );
 }
 
 
@@ -1624,21 +1334,15 @@ function findPlayableVerseByLocation(
 ) {
 
     const sectionBooks =
-        bibleStructure[
-            sectionName
-        ] ||
+        bibleStructure[sectionName] ||
         bibleStructure["Acts"];
 
-
-    // Build the set of book IDs in this section
-    // so we can filter location references.
     const sectionBookIds = new Set(
         sectionBooks.map(b => b.id)
     );
 
-
     // Gather all location features that have at
-    // least one reference verse in this section
+    // least one KML-vetted reference in this section
     // and haven't been used this game yet.
     const candidateLocations = Object.keys(locationFeatures)
         .filter(internalName => {
@@ -1659,7 +1363,7 @@ function findPlayableVerseByLocation(
 
     if (candidateLocations.length === 0) {
 
-        // Fall back to frequency method
+        // Fall back to frequency method if all locations used
         findPlayableVerseByFrequency(
             sectionName,
             translation,
@@ -1670,76 +1374,89 @@ function findPlayableVerseByLocation(
     }
 
 
-    // Pick a random location from the candidates.
+    // Pick a random location (equal weight).
     const randomInternalName =
         candidateLocations[
-            Math.floor(
-                seededRandom() *
-                candidateLocations.length
-            )
+            Math.floor(seededRandom() * candidateLocations.length)
         ];
-
 
     const feature = locationFeatures[randomInternalName];
 
-
-    // Filter that location's references to only
-    // those in the current section, then pick one.
+    // Filter references to this section, then pick one.
     const sectionRefs = (feature.properties.references || [])
         .filter(ref => {
             const bookId = ref.split(' ')[0];
             return sectionBookIds.has(bookId);
         });
 
-
     if (sectionRefs.length === 0) {
 
-        findPlayableVerse(
-            sectionName,
-            translation,
-            attempts + 1
-        );
-
+        findPlayableVerse(sectionName, translation, attempts + 1);
         return;
     }
-
 
     const randomRef =
         sectionRefs[
-            Math.floor(
-                seededRandom() *
-                sectionRefs.length
-            )
+            Math.floor(seededRandom() * sectionRefs.length)
         ];
 
-
-    // Parse the reference: e.g. "ACT 11:19"
-    const refParts = randomRef.split(' ');
-    const bookId = refParts[0];
-    const chapterVerse = (refParts[1] || '').split(':');
-    const targetChapter = parseInt(chapterVerse[0]);
-    const targetVerse  = parseInt(chapterVerse[1]);
-
-
-    // Find which book entry matches this bookId
-    const bookEntry =
-        sectionBooks.find(b => b.id === bookId);
+    const bookId = randomRef.split(' ')[0];
+    const bookEntry = sectionBooks.find(b => b.id === bookId);
 
     if (!bookEntry) {
 
-        findPlayableVerse(
-            sectionName,
-            translation,
-            attempts + 1
-        );
-
+        findPlayableVerse(sectionName, translation, attempts + 1);
         return;
     }
 
+    loadAndDisplayVerseFromRef(
+        feature,
+        randomRef,
+        bookEntry,
+        randomInternalName,
+        sectionName,
+        translation,
+        attempts,
+        true    // skip Jerusalem rule on by-location path
+    );
+}
+
+
+// ==========================================
+// LOAD VERSE FROM KML REFERENCE
+//
+// Fetches the book JSON, finds the exact
+// chapter and verse identified by the KML
+// reference string (e.g. "ACT 11:19"), then
+// calls displayVerse. Both game paths use
+// this — no verse-text scanning.
+// ==========================================
+
+function loadAndDisplayVerseFromRef(
+    feature,
+    ref,
+    bookEntry,
+    internalName,
+    sectionName,
+    translation,
+    attempts,
+    skipJerusalemRule
+) {
+
+    // Parse ref: e.g. "ACT 11:19" -> chapter=11, verse=19
+    const refParts     = ref.split(' ');
+    const chapterVerse = (refParts[1] || '').split(':');
+    const targetChapterNum = parseInt(chapterVerse[0]);
+    const targetVerseNum   = parseInt(chapterVerse[1]);
+
+    if (!targetChapterNum || !targetVerseNum) {
+
+        findPlayableVerse(sectionName, translation, attempts + 1);
+        return;
+    }
 
     const filePath =
         `./BibleMapper_Data/${bookEntry.testament}/${bookEntry.id}/${translation}.json`;
-
 
     fetch(filePath)
         .then(response => {
@@ -1752,268 +1469,81 @@ function findPlayableVerseByLocation(
         .then(bookData => {
 
             if (
-                !processAndDisplayScripture(
-                    bookData,
+                !bookData.text ||
+                !Array.isArray(bookData.text)
+            ) {
+
+                findPlayableVerse(sectionName, translation, attempts + 1);
+                return;
+            }
+
+            // Find the chapter whose ID ends with ".<targetChapterNum>".
+            const chapterData = bookData.text.find(ch => {
+                const chNum = parseInt((ch.ID || '').split('.').pop());
+                return chNum === targetChapterNum;
+            });
+
+            if (!chapterData || !Array.isArray(chapterData.text)) {
+
+                findPlayableVerse(sectionName, translation, attempts + 1);
+                return;
+            }
+
+            // Find the verse. Verse IDs can have duplicates (poetry),
+            // so we take the first match — the opening line is most
+            // readable as a standalone clue.
+            const verseObj = chapterData.text.find(v =>
+                parseInt(v.ID) === targetVerseNum
+            );
+
+            if (!verseObj) {
+
+                findPlayableVerse(sectionName, translation, attempts + 1);
+                return;
+            }
+
+            if (
+                !displayVerse(
+                    feature,
                     bookEntry,
-                    true,           // skipJerusalemRule = skip the 60% rule
-                    randomInternalName,
-                    targetChapter,
-                    targetVerse
+                    internalName,
+                    chapterData,
+                    verseObj,
+                    skipJerusalemRule
                 )
             ) {
 
-                findPlayableVerse(
-                    sectionName,
-                    translation,
-                    attempts + 1
-                );
+                findPlayableVerse(sectionName, translation, attempts + 1);
             }
         })
         .catch(() => {
 
-            findPlayableVerse(
-                sectionName,
-                translation,
-                attempts + 1
-            );
+            findPlayableVerse(sectionName, translation, attempts + 1);
         });
 }
 
 
 // ==========================================
-// PROCESS SCRIPTURE
+// DISPLAY VERSE
+//
+// Applies skip rules, sets game globals,
+// opens the scripture window, and starts
+// the timer. Returns false if a skip rule
+// fired (caller should retry).
 // ==========================================
 
-function processAndDisplayScripture(
-    bookData,
-    randomBook,
-    skipJerusalemRule = false,
-    forceInternalName = null,
-    forceChapter = null,
-    forceVerse = null
+function displayVerse(
+    feature,
+    bookEntry,
+    internalName,
+    chapterData,
+    verseObj,
+    skipJerusalemRule
 ) {
 
-    let validVerses = [];
-
-
-    if (
-        !bookData.text ||
-        !Array.isArray(bookData.text)
-    ) {
-
-        return false;
-    }
-
-
-    bookData.text.forEach(
-        chapter => {
-
-            if (
-                !chapter.text ||
-                !Array.isArray(chapter.text)
-            ) {
-
-                return;
-            }
-
-
-            chapter.text.forEach(
-                verse => {
-
-                    const verseTextLower =
-                        verse.text.toLowerCase();
-
-
-                    let matchedLocation =
-                        null;
-
-
-                    /*
-                     * Find Scripture-facing
-                     * location name.
-                     *
-                     * This allows:
-                     *
-                     * Succoth
-                     *
-                     * to match either:
-                     *
-                     * Succoth|egypt
-                     * Succoth|israel
-                     */
-
-                    const containsMapLocation =
-                        validMapLocations.some(
-                            location => {
-
-                                const escaped =
-                                    location.replace(
-                                        /[.*+?^${}()|[\]\\]/g,
-                                        '\\$&'
-                                    );
-
-
-                                if (
-                                    new RegExp(
-                                        `\\b${escaped}\\b`,
-                                        'i'
-                                    ).test(
-                                        verseTextLower
-                                    )
-                                ) {
-
-                                    matchedLocation =
-                                        location;
-
-                                    return true;
-                                }
-
-
-                                return false;
-                            }
-                        );
-
-
-                    if (
-                        !containsMapLocation
-                    ) {
-
-                        return;
-                    }
-
-
-                    /*
-                     * Resolve the exact geographic
-                     * feature for this verse.
-                     */
-
-                    const resolvedFeature =
-                        resolveLocationFeature(
-                            matchedLocation,
-                            bookData,
-                            chapter,
-                            verse
-                        );
-
-
-                    /*
-                     * If this is an ambiguous
-                     * location and no feature has
-                     * a matching Scripture
-                     * reference, don't use it.
-                     */
-
-                    if (
-                        !resolvedFeature
-                    ) {
-
-                        return;
-                    }
-
-
-                    const internalName =
-                        resolvedFeature
-                            .properties
-                            .name
-                            .toLowerCase();
-
-
-                    validVerses.push({
-
-                        chapterData:
-                            chapter,
-
-                        targetVerse:
-                            verse,
-
-                        matchedWord:
-                            matchedLocation,
-
-                        feature:
-                            resolvedFeature,
-
-                        internalName:
-                            internalName
-                    });
-                }
-            );
-        }
-    );
-
-
-    if (
-        validVerses.length === 0
-    ) {
-
-        return false;
-    }
-
-
-    // Filter out locations already used this game, but only if doing
-    // so doesn't leave us with nothing (e.g. a very small section).
-    const unusedVerses =
-        validVerses.filter(
-            v => !usedLocationsThisGame.has(v.internalName)
-        );
-
-    const versePool =
-        unusedVerses.length > 0
-            ? unusedVerses
-            : validVerses;
-
-
-    // ==========================================
-    // BY-LOCATION PATH: use the pre-chosen
-    // location and verse reference directly,
-    // bypassing the random pool pick.
-    // ==========================================
-
-    let selection;
-
-    if (forceInternalName !== null) {
-
-        // Find this verse in validVerses by matching
-        // the forced internalName and chapter/verse.
-        const forced = validVerses.find(v =>
-            v.internalName === forceInternalName &&
-            (forceChapter === null ||
-                parseInt((v.chapterData.ID || '').split('.').pop()) === forceChapter) &&
-            (forceVerse === null ||
-                parseInt(v.targetVerse.ID) === forceVerse)
-        );
-
-        if (!forced) {
-
-            // The exact verse wasn't found in validVerses
-            // (maybe the word doesn't appear in that verse
-            // in this translation). Fall back to any verse
-            // for this location in this book.
-            const anyForced = validVerses.find(
-                v => v.internalName === forceInternalName
-            );
-
-            if (!anyForced) return false;
-
-            selection = anyForced;
-
-        } else {
-
-            selection = forced;
-        }
-
-    } else {
-
-        const randomIndex =
-            Math.floor(
-                seededRandom() *
-                versePool.length
-            );
-
-        selection =
-            versePool[
-                randomIndex
-            ];
-    }
+    // The scripture_name is the word to blank in the verse.
+    const matchedWord =
+        (feature.properties.scripture_name || "").toLowerCase();
 
 
     // ==========================================
@@ -2023,13 +1553,10 @@ function processAndDisplayScripture(
 
     if (
         !skipJerusalemRule &&
-        selection.matchedWord ===
-        "jerusalem"
+        matchedWord === "jerusalem"
     ) {
 
-        if (
-            seededRandom() < 0.60
-        ) {
+        if (seededRandom() < 0.60) {
 
             console.log(
                 "Jerusalem selected, skipping due to 60% rule."
@@ -2045,14 +1572,9 @@ function processAndDisplayScripture(
     // 20% CHANCE TO SKIP
     // ==========================================
 
-    if (
-        selection.matchedWord ===
-        "egypt"
-    ) {
+    if (matchedWord === "egypt") {
 
-        if (
-            seededRandom() < 0.20
-        ) {
+        if (seededRandom() < 0.20) {
 
             console.log(
                 "Egypt selected, skipping due to 20% rule."
@@ -2064,45 +1586,29 @@ function processAndDisplayScripture(
 
 
     // ==========================================
-    // SET TARGET
+    // SET GAME STATE
     // ==========================================
 
-    usedLocationsThisGame.add(
-        selection.internalName
-    );
+    usedLocationsThisGame.add(internalName);
 
-    currentTargetLocation =
-        selection.internalName;
+    currentTargetLocation = internalName;
 
+    currentTargetCenter = feature.properties.center;
 
-    currentTargetCenter =
-        selection.feature.properties.center;
+    currentTargetVerseText = verseObj.text;
 
-
-    currentTargetVerseText =
-        selection.targetVerse.text;
-
-
-    // Build reference from randomBook.id (clean, e.g. "1CO") and
-    // the chapter ID field which looks like "NT:1CO.3" — extract
-    // the chapter number from the part after the dot.
-    const chapterNum = (selection.chapterData.ID || "").split(".").pop();
-    const verseNum   = selection.targetVerse.ID || "";
+    // Build the display reference: e.g. "1CO 16:19"
+    const chapterNum = (chapterData.ID || "").split(".").pop();
+    const verseNum   = verseObj.ID || "";
     currentTargetReference =
-        (randomBook.id && chapterNum && verseNum)
-            ? `${randomBook.id} ${chapterNum}:${verseNum}`
+        (bookEntry.id && chapterNum && verseNum)
+            ? `${bookEntry.id} ${chapterNum}:${verseNum}`
             : null;
 
 
-    openScriptureWindow(
-        selection.chapterData,
-        selection.targetVerse,
-        selection.matchedWord
-    );
-
+    openScriptureWindow(chapterData, verseObj, matchedWord);
 
     startTimer();
-
 
     return true;
 }
