@@ -44,7 +44,8 @@ MANUAL_OVERRIDES = {
     "judea": [35.1000, 31.6500], 
     "gomorrah": [35.42604,31.0904],
     "valley of siddim": [35.42604,31.1504],
-    "bethel": [35.241389,31.952778]
+    "bethel": [35.241389,31.952778],
+    "adriatic sea": [18.16286,41.29232]
 }
 
 # Hierarchy of shapes: We ALWAYS want a Polygon or Line over a Point
