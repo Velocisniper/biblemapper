@@ -14,13 +14,13 @@ OUTPUT_GEOJSON_PATH = REPO_ROOT / "bible_places.geojson"
 
 # Main Anchors (Rank 1 - Zoom <= 6)
 MAIN_ANCHORS = {
-    "egypt", "achaia", "babylon", "judea", "judaea",
+    "egypt", "greece", "babylon", "judea", "judaea",
     "cyprus", "crete", "rome", "asia", "assyria", "persia", "spain", "media"
 }
 
 # Mid Anchors (Rank 2 - Zoom 7)
 MID_ANCHORS = {
-    "jerusalem", "samaria", "malta", "corinth", "patmos", 
+    "jerusalem", "samaria", "malta", "corinth", "patmos", "achaia",
     "ephesus", "colossae", "lystra", "galatia", "antioch (syria)", 
     "damascus", "galilee", "dan", "beersheba", 
     "midian", "rameses", "mediterranean sea", "athens", "macedonia",
@@ -32,7 +32,7 @@ RANK3_ANCHORS = {
     "dead sea", "philistia", "shiloh", "syracuse", "rhodes", "tarsus", 
     "euphrates river", "nineveh", "tigris river", "antioch (pisidia)", "moab", 
     "edom", "jordan river", "tyre", "joppa", "jericho", "red sea", "amalek",
-    "sea of galilee", "thessalonica"
+    "sea of galilee", "thessalonica", "bethel"
 }
 
 # Center overrides
@@ -41,7 +41,9 @@ MANUAL_OVERRIDES = {
     "mediterranean sea": [23.7000, 34.5000], 
     "dead sea": [35.4800, 31.6500],
     "judaea": [35.1000, 31.6500],
-    "judea": [35.1000, 31.6500] 
+    "judea": [35.1000, 31.6500], 
+    "gomorrah": [35.42604,31.0904],
+    "valley of siddim": [35.42604,31.1504]
 }
 
 # Hierarchy of shapes: We ALWAYS want a Polygon or Line over a Point
@@ -83,6 +85,42 @@ AMBIGUOUS_KML_LOCATIONS = {
         "variant": "egypt",
     },
 }
+
+# ------------------------------------------------------------------
+# Outside-Israel expansion pass.
+#
+# After the CSV pass, we run a second pass over all remaining KML
+# placemarks that didn't match the CSV. Any placemark whose center
+# falls outside the Israel bounding box is a candidate for inclusion,
+# subject to:
+#   - minimum scripture references in the KML (at least 1)
+#   - proximity deduplication (must be > EXPANSION_MIN_SEPARATION_MILES
+#     from every already-accepted location)
+#   - a hard cap of EXPANSION_MAX_LOCATIONS total additions
+#
+# The bounding box is intentionally loose — it excludes the dense
+# Israel/Palestine core but keeps Transjordan places that are already
+# in the CSV list.
+# ------------------------------------------------------------------
+ISRAEL_BBOX = {
+    "lon_min": 34.0,
+    "lon_max": 36.3,
+    "lat_min": 29.5,
+    "lat_max": 33.5,
+}
+
+EXPANSION_MAX_LOCATIONS   = 250   # hard cap on new additions
+EXPANSION_MIN_SEPARATION_MILES = 5  # don't add if something is already this close
+EXPANSION_MIN_REFS        = 1     # must have at least this many KML scripture refs
+
+def is_outside_israel(lon, lat):
+    """Return True if the coordinate falls outside the Israel core bounding box."""
+    bb = ISRAEL_BBOX
+    return (
+        lon < bb["lon_min"] or lon > bb["lon_max"] or
+        lat < bb["lat_min"] or lat > bb["lat_max"]
+    )
+
 
 def clean_kml_identifier(name):
     cleaned = re.sub(r'\(.*?\)', '', name or '')
@@ -238,6 +276,128 @@ def get_full_text(element):
         return "".join(element.itertext()).strip()
     return ""
 
+
+def extract_placemark_geometry(placemark, ns):
+    """
+    Parse the geometry from a KML Placemark.
+    Returns (geom_type, geom_coords, best_lon, best_lat) or (None, None, None, None).
+    """
+    pt_node   = placemark.find('.//kml:Point/kml:coordinates', ns)
+    line_node = placemark.find('.//kml:LineString/kml:coordinates', ns)
+    poly_node = placemark.find('.//kml:Polygon//kml:coordinates', ns)
+
+    geom_type = None
+    geom_coords = None
+    best_lon, best_lat = None, None
+
+    if pt_node is not None:
+        raw = get_full_text(pt_node).split()
+        if raw:
+            parts = [float(c) for c in raw[0].split(',') if c]
+            if len(parts) >= 2:
+                geom_type   = "Point"
+                geom_coords = [parts[0], parts[1]]
+                best_lon, best_lat = parts[0], parts[1]
+
+    elif line_node is not None:
+        raw = get_full_text(line_node).split()
+        coords = []
+        for pair in raw:
+            parts = [float(c) for c in pair.split(',') if c]
+            if len(parts) >= 2:
+                coords.append([parts[0], parts[1]])
+        if coords:
+            geom_type   = "LineString"
+            geom_coords = coords
+            mid = len(coords) // 2
+            best_lon, best_lat = coords[mid][0], coords[mid][1]
+
+    elif poly_node is not None:
+        raw = get_full_text(poly_node).split()
+        coords = []
+        lons, lats = [], []
+        for pair in raw:
+            parts = [float(c) for c in pair.split(',') if c]
+            if len(parts) >= 2:
+                coords.append([parts[0], parts[1]])
+                lons.append(parts[0])
+                lats.append(parts[1])
+        if coords:
+            geom_type   = "Polygon"
+            geom_coords = [coords]
+            best_lon = round((max(lons) + min(lons)) / 2, 5)
+            best_lat = round((max(lats) + min(lats)) / 2, 5)
+
+    return geom_type, geom_coords, best_lon, best_lat
+
+
+def nearest_accepted_distance(lon, lat, accepted_centers):
+    """Return the distance in miles to the nearest already-accepted location."""
+    min_dist = float("inf")
+    for (alon, alat) in accepted_centers:
+        d = haversine_miles(lon, lat, alon, alat)
+        if d < min_dist:
+            min_dist = d
+    return min_dist
+
+
+def titlecase_name(raw):
+    """Capitalise the first letter of each word, preserving hyphens."""
+    return " ".join(
+        "-".join(part.capitalize() for part in word.split("-"))
+        for word in raw.split()
+    )
+
+
+# ------------------------------------------------------------------
+# Expansion-pass name cleaning helpers
+# ------------------------------------------------------------------
+
+# KML names like "Kir 1 / Gutium (70%)" encode a confidence score.
+# We reject anything below this threshold — low-confidence sites are
+# speculative and would confuse the player.
+EXPANSION_CONFIDENCE_THRESHOLD = 75
+
+
+def extract_confidence_score(raw_name):
+    """
+    Return the integer confidence score from a name like 'Derbe (95%)',
+    or None if no score is present.
+    """
+    m = re.search(r'\((\d+)%\)', raw_name)
+    return int(m.group(1)) if m else None
+
+
+def clean_expansion_display_name(raw_name):
+    """
+    Derive a clean, player-facing display name from a raw KML name.
+
+    Rules applied in order:
+      1. Take only the text before the first slash or tilde
+         ('Kir 1 / Gutium' -> 'Kir 1', 'Ephesus~alt' -> 'Ephesus').
+      2. Strip any parenthetical group, including confidence scores
+         ('Derbe (95%)' -> 'Derbe', 'Haran (ancient city)' -> 'Haran').
+      3. Strip a bare trailing integer — the KML duplicate index
+         ('Kir 1' -> 'Kir', 'En-gedi 2' -> 'En-gedi').
+         Numbers that are part of the canonical name ('1 Kings') are
+         not at the end so they are left alone.
+      4. Strip stray junk characters (%, ~).
+      5. Titlecase the result, preserving hyphens.
+
+    Returns an empty string if nothing useful remains after cleaning.
+    """
+    # Step 1: everything before the first slash or tilde
+    name = re.split(r'[/~]', raw_name)[0].strip()
+    # Step 2: remove parentheticals
+    name = re.sub(r'\(.*?\)', '', name).strip()
+    # Step 3: remove trailing bare integer (duplicate index)
+    name = re.sub(r'\s+\d+$', '', name).strip()
+    # Step 4: strip junk
+    name = re.sub(r'[%~]', '', name).strip()
+    # Step 5: titlecase
+    return titlecase_name(name) if name else ""
+
+
 def kml_to_geojson():
     if not KML_PATH.exists():
         raise FileNotFoundError(f"Missing KML file: {KML_PATH}")
@@ -294,7 +454,14 @@ def kml_to_geojson():
     parent_map = get_parent_map(root)
 
     unique_names = {}
-    matched_csv_keys = set() 
+    matched_csv_keys = set()
+
+    # ================================================================
+    # PASS 1 — CSV-matched locations (identical to original behaviour)
+    # ================================================================
+    # We also collect every placemark that did NOT match the CSV so
+    # that the expansion pass can inspect them without re-parsing.
+    unmatched_placemarks = []
 
     for placemark in root.findall('.//kml:Placemark', ns):
         name_el = placemark.find('kml:name', ns)
@@ -345,6 +512,8 @@ def kml_to_geojson():
                         matched_csv_key = close_matches[0]
 
         if not matched_csv_key:
+            # Save for expansion pass
+            unmatched_placemarks.append((placemark, raw_name, clean_kml, ancestor_folders))
             continue
 
         desc_el = placemark.find('kml:description', ns)
@@ -374,50 +543,7 @@ def kml_to_geojson():
             )
         )
 
-        pt_node = placemark.find('.//kml:Point/kml:coordinates', ns)
-        line_node = placemark.find('.//kml:LineString/kml:coordinates', ns)
-        poly_node = placemark.find('.//kml:Polygon//kml:coordinates', ns)
-
-        geom_type = None
-        geom_coords = None
-        best_lon, best_lat = None, None
-
-        if pt_node is not None:
-            raw = get_full_text(pt_node).split()
-            if raw:
-                parts = [float(c) for c in raw[0].split(',') if c]
-                if len(parts) >= 2:
-                    geom_type = "Point"
-                    geom_coords = [parts[0], parts[1]]
-                    best_lon, best_lat = parts[0], parts[1]
-                    
-        elif line_node is not None:
-            raw = get_full_text(line_node).split()
-            coords = []
-            for pair in raw:
-                parts = [float(c) for c in pair.split(',') if c]
-                if len(parts) >= 2:
-                    coords.append([parts[0], parts[1]])
-            if coords:
-                geom_type = "LineString"
-                geom_coords = coords
-                mid = len(coords) // 2
-                best_lon, best_lat = coords[mid][0], coords[mid][1]
-                
-        elif poly_node is not None:
-            raw = get_full_text(poly_node).split()
-            coords = []
-            lons, lats = [], []
-            for pair in raw:
-                parts = [float(c) for c in pair.split(',') if c]
-                if len(parts) >= 2:
-                    coords.append([parts[0], parts[1]])
-                    lons.append(parts[0])
-                    lats.append(parts[1])
-            if coords:
-                geom_type = "Polygon"
-                geom_coords = [coords] 
-                best_lon, best_lat = round((max(lons) + min(lons)) / 2, 5), round((max(lats) + min(lats)) / 2, 5)
+        geom_type, geom_coords, best_lon, best_lat = extract_placemark_geometry(placemark, ns)
 
         if geom_type is None:
             continue
@@ -435,27 +561,27 @@ def kml_to_geojson():
         if matched_csv_key in MANUAL_OVERRIDES:
             best_lon, best_lat = MANUAL_OVERRIDES[matched_csv_key]
 
-        is_water = geom_type == "LineString" and any(w in raw_name.lower() or w in matched_csv_key for w in ["river", "brook", "stream", "wadi"])
+        is_water = geom_type == "LineString" and any(
+            w in raw_name.lower() or w in matched_csv_key
+            for w in ["river", "brook", "stream", "wadi"]
+        )
 
         final_data = csv_locations[matched_csv_key]
 
         if ambiguous_info:
-            final_name = ambiguous_info["display_name"]
+            final_name    = ambiguous_info["display_name"]
             scripture_name = ambiguous_info["scripture_name"]
-            variant = ambiguous_info["variant"]
+            variant        = ambiguous_info["variant"]
         else:
-            final_name = final_data["display_name"]
+            final_name    = final_data["display_name"]
             scripture_name = final_name
 
             if matched_csv_key == "antioch":
-                final_name = "Antioch"
-                scripture_name = "Antioch"
+                final_name = scripture_name = "Antioch"
             elif matched_csv_key == "succoth":
-                final_name = "Succoth"
-                scripture_name = "Succoth"
+                final_name = scripture_name = "Succoth"
             elif matched_csv_key == "pisidia":
-                final_name = "Pisidia"
-                scripture_name = "Pisidia"
+                final_name = scripture_name = "Pisidia"
             elif final_name:
                 final_name = final_name[:1].upper() + final_name[1:]
 
@@ -470,7 +596,7 @@ def kml_to_geojson():
         if unique_key not in unique_names:
             should_update = True
         else:
-            current_geom = unique_names[unique_key]["geom_type"]
+            current_geom     = unique_names[unique_key]["geom_type"]
             current_mentions = unique_names[unique_key]["max_mentions"]
             
             new_rank = GEOM_RANK.get(geom_type, 0)
@@ -483,25 +609,202 @@ def kml_to_geojson():
                 
         if should_update:
             unique_names[unique_key] = {
-                "display_name": final_name,
+                "display_name":  final_name,
                 "scripture_name": scripture_name,
-                "clean_key": matched_csv_key,
+                "clean_key":     matched_csv_key,
                 "match_variant": variant,
-                "importance": final_data["importance"],
-                "center": [best_lon, best_lat],
-                "geom_type": geom_type,
-                "geom_coords": geom_coords,
-                "is_water": is_water,
-                "references": references,
-                "max_mentions": mentions
+                "importance":    final_data["importance"],
+                "center":        [best_lon, best_lat],
+                "geom_type":     geom_type,
+                "geom_coords":   geom_coords,
+                "is_water":      is_water,
+                "references":    references,
+                "max_mentions":  mentions,
+                "from_expansion": False,
             }
+
+    print(f"  Pass 1 complete: {len(unique_names)} CSV-matched locations.")
+
+    # ================================================================
+    # PASS 2 — Outside-Israel expansion
+    #
+    # Walk every placemark that didn't match the CSV. For each one:
+    #   1. Parse geometry; skip if none or if center is inside Israel.
+    #   2. Must have at least EXPANSION_MIN_REFS scripture references.
+    #   3. Must not clash with an existing location (name or proximity).
+    #   4. Collect all valid candidates, sort by reference count
+    #      descending (most-referenced first = most likely to appear
+    #      in a verse), then admit up to EXPANSION_MAX_LOCATIONS.
+    # ================================================================
+
+    # Build a list of all current center points for proximity checks.
+    accepted_centers = [
+        tuple(d["center"])
+        for d in unique_names.values()
+        if d.get("center")
+    ]
+
+    expansion_candidates = []
+
+    # Normalised names already in the map (for name-clash detection)
+    existing_names_normalised = {
+        clean_place_name(k) for k in unique_names.keys()
+    }
+
+    # Track cleaned names seen during the candidate-building phase so that
+    # multiple KML placemarks that resolve to the same clean name (e.g.
+    # "Kir 1" and "Kir 2") are deduplicated before we even sort.
+    # The highest-confidence / most-referenced variant wins.
+    expansion_by_clean_name = {}  # clean_display -> candidate dict
+
+    skipped_confidence  = 0
+    skipped_bad_name    = 0
+
+    for placemark, raw_name, clean_kml, ancestor_folders in unmatched_placemarks:
+
+        # ---- name cleaning & confidence filtering ----
+
+        confidence = extract_confidence_score(raw_name)
+
+        # Reject low-confidence speculative sites
+        if confidence is not None and confidence < EXPANSION_CONFIDENCE_THRESHOLD:
+            skipped_confidence += 1
+            continue
+
+        display_name = clean_expansion_display_name(raw_name)
+
+        # Reject empty or degenerate results (e.g. the whole name was a number)
+        if not display_name or display_name.isdigit():
+            skipped_bad_name += 1
+            continue
+
+        # ---- geometry ----
+
+        geom_type, geom_coords, best_lon, best_lat = extract_placemark_geometry(
+            placemark, ns
+        )
+        if geom_type is None:
+            continue
+
+        # Must be outside Israel
+        if not is_outside_israel(best_lon, best_lat):
+            continue
+
+        # ---- scripture references ----
+
+        desc_el   = placemark.find('kml:description', ns)
+        desc_text = get_full_text(desc_el)
+
+        reference_sources = [desc_text] if desc_text else []
+        current = parent_map.get(placemark)
+        while current is not None:
+            folder_desc = current.find('kml:description', ns)
+            folder_desc_text = get_full_text(folder_desc)
+            if folder_desc_text:
+                reference_sources.append(folder_desc_text)
+            current = parent_map.get(current)
+
+        all_reference_text = "\n".join(reference_sources)
+        references = extract_kml_references(all_reference_text)
+
+        if len(references) < EXPANSION_MIN_REFS:
+            continue
+
+        # ---- name-clash with CSV pass ----
+
+        norm = clean_place_name(display_name)
+        if norm in existing_names_normalised:
+            continue
+
+        # ---- apply large-polygon cap ----
+
+        if geom_type == "Polygon":
+            width_miles, height_miles = polygon_bbox_miles(geom_coords)
+            if max(width_miles, height_miles) > LARGE_REGION_THRESHOLD_MILES:
+                geom_coords = make_circle_polygon(
+                    best_lon, best_lat, CAPPED_REGION_RADIUS_MILES
+                )
+
+        is_water = geom_type == "LineString" and any(
+            w in raw_name.lower()
+            for w in ["river", "brook", "stream", "wadi"]
+        )
+
+        candidate = {
+            "display_name":   display_name,
+            "scripture_name": display_name,
+            "clean_key":      norm,
+            "match_variant":  None,
+            "importance":     4,
+            "center":         [best_lon, best_lat],
+            "geom_type":      geom_type,
+            "geom_coords":    geom_coords,
+            "is_water":       is_water,
+            "references":     references,
+            "max_mentions":   len(references),
+            "confidence":     confidence if confidence is not None else 100,
+            "from_expansion": True,
+        }
+
+        # ---- intra-expansion deduplication ----
+        # If we've already seen this cleaned name, keep whichever variant
+        # has more references (then higher confidence as a tiebreaker).
+        if norm in expansion_by_clean_name:
+            existing = expansion_by_clean_name[norm]
+            if (len(references), candidate["confidence"]) > \
+               (existing["max_mentions"], existing["confidence"]):
+                expansion_by_clean_name[norm] = candidate
+        else:
+            expansion_by_clean_name[norm] = candidate
+
+    expansion_candidates = list(expansion_by_clean_name.values())
+
+    print(
+        f"  Expansion pre-filter: {skipped_confidence} rejected for low confidence, "
+        f"{skipped_bad_name} rejected for bad/empty name, "
+        f"{len(expansion_candidates)} unique candidates remaining."
+    )
+
+    # Sort by reference count descending so the most-attested places
+    # fill the cap first.
+    expansion_candidates.sort(key=lambda x: x["max_mentions"], reverse=True)
+
+    added = 0
+    skipped_proximity = 0
+
+    for candidate in expansion_candidates:
+        if added >= EXPANSION_MAX_LOCATIONS:
+            break
+
+        lon, lat = candidate["center"]
+
+        # Proximity check against everything accepted so far
+        if accepted_centers:
+            nearest = nearest_accepted_distance(lon, lat, accepted_centers)
+            if nearest < EXPANSION_MIN_SEPARATION_MILES:
+                skipped_proximity += 1
+                continue
+
+        norm = candidate["clean_key"]
+        unique_key = candidate["display_name"]
+        unique_names[unique_key] = candidate
+        accepted_centers.append(tuple(candidate["center"]))
+        existing_names_normalised.add(norm)
+        added += 1
+
+    print(
+        f"  Pass 2 complete: {added} expansion locations added "
+        f"({skipped_proximity} skipped for proximity)."
+    )
+    print(f"  Total before isolation pass: {len(unique_names)}")
 
     # --------------------------------------------------------------
     # Promote isolated Rank-4 places to Rank 3.
     #
-    # Any place with no other mapped location within 50 miles becomes
-    # easier to see when zoomed in. Explicit Rank 1/2/3 locations are
-    # never downgraded or changed.
+    # Any place with no other mapped location within
+    # ISOLATION_THRESHOLD_MILES gets promoted so its label appears
+    # at zoom 8 rather than only at max zoom.
+    # Explicit Rank 1/2/3 locations are never changed.
     # --------------------------------------------------------------
     place_items = list(unique_names.items())
 
@@ -541,17 +844,17 @@ def kml_to_geojson():
         features.append({
             "type": "Feature",
             "geometry": {
-                "type": data["geom_type"], 
+                "type":        data["geom_type"], 
                 "coordinates": data["geom_coords"]
             },
             "properties": {
-                "name": data["display_name"],
-                "scripture_name": data["scripture_name"],
-                "importance": data["importance"],
-                "center": data["center"],
-                "is_water": data["is_water"],
-                "references": data.get("references", []),
-                "location_variant": data.get("match_variant")
+                "name":              data["display_name"],
+                "scripture_name":    data["scripture_name"],
+                "importance":        data["importance"],
+                "center":            data["center"],
+                "is_water":          data["is_water"],
+                "references":        data.get("references", []),
+                "location_variant":  data.get("match_variant")
             }
         })
 
@@ -561,9 +864,7 @@ def kml_to_geojson():
     print("\n" + "="*50)
     print("📍 MAP PROCESSING COMPLETE")
     print("="*50)
-    print(f"✅ Consolidated {len(features)} uniquely named places from the CSV.")
-    print(f"✅ Extracted full geometry boundaries for future game interactions.")
-    print(f"✅ Saved to {OUTPUT_GEOJSON_PATH.name}!")
+    print(f"✅ {len(features)} total locations written to {OUTPUT_GEOJSON_PATH.name}")
 
     print("\nSpecial locations:")
     for special_name in (
@@ -587,6 +888,21 @@ def kml_to_geojson():
             )
         else:
             print(f"  ✗ {special_name} NOT FOUND")
+
+    # Show a sample of what was added in the expansion pass
+    expansion_added = [
+        d for d in unique_names.values()
+        if d.get("from_expansion")
+    ]
+    if expansion_added:
+        expansion_added.sort(key=lambda x: x["max_mentions"], reverse=True)
+        print(f"\nTop 20 expansion additions (by reference count):")
+        for d in expansion_added[:20]:
+            print(
+                f"  + {d['display_name']} "
+                f"({d['max_mentions']} refs, "
+                f"lon={d['center'][0]:.2f}, lat={d['center'][1]:.2f})"
+            )
 
 if __name__ == "__main__":
     kml_to_geojson()
