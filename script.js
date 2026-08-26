@@ -1532,6 +1532,75 @@ function loadAndDisplayVerseFromRef(
 // fired (caller should retry).
 // ==========================================
 
+// ==========================================
+// FIND MATCH IN VERSE
+//
+// Given a verse string and a scripture_name,
+// returns the longest phrase from scripture_name
+// that actually appears in the verse (so we
+// know what word to blank). Returns null if
+// nothing matches.
+//
+// Strategy:
+// 1. Try the full scripture_name first.
+// 2. For multi-word names, try contiguous
+//    sub-phrases longest-first.
+// 3. Single sub-words must be >= 4 chars to
+//    avoid matching generic words like "Sea",
+//    "Red", "Hor". Short names used as a whole
+//    (Ai, Uz, Sin) are always tried in step 1.
+// ==========================================
+
+const VERSE_STOP_WORDS =
+    new Set(['the','of','and','a','an','in','at','to','for','by','with','beyond']);
+
+function findMatchInVerse(verseText, scriptureName) {
+
+    const textLower = verseText.toLowerCase();
+
+    // 1. Try the full scripture_name
+    const fullEscaped = scriptureName.toLowerCase()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (new RegExp(`\\b${fullEscaped}\\b`, 'i').test(textLower))
+        return scriptureName;
+
+    // 2. Single-word name that didn't match — nothing else to try
+    const words = scriptureName.split(' ');
+    if (words.length === 1)
+        return null;
+
+    // 3. Multi-word: try sub-phrases, longest first
+    for (let length = words.length - 1; length >= 1; length--) {
+
+        for (let start = 0; start <= words.length - length; start++) {
+
+            const phraseWords = words.slice(start, start + length);
+            const phrase      = phraseWords.join(' ');
+
+            // Skip phrases made entirely of stop words
+            const meaningful = phraseWords.filter(
+                w => !VERSE_STOP_WORDS.has(w.toLowerCase())
+            );
+            if (meaningful.length === 0)
+                continue;
+
+            // Single sub-word: must be long enough to be distinctive
+            if (length === 1 && phrase.length < 4)
+                continue;
+
+            const escaped = phrase.toLowerCase()
+                .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            if (new RegExp(`\\b${escaped}\\b`, 'i').test(textLower))
+                return phrase;
+        }
+    }
+
+    return null;
+}
+
+
 function displayVerse(
     feature,
     bookEntry,
@@ -1541,9 +1610,16 @@ function displayVerse(
     skipJerusalemRule
 ) {
 
-    // The scripture_name is the word to blank in the verse.
-    const matchedWord =
+    // The scripture_name is what the location is called in Bible text.
+    const scriptureName =
         (feature.properties.scripture_name || "").toLowerCase();
+
+    // Find the actual word/phrase from scripture_name present in this
+    // verse. If nothing matches, this ref isn't usable — skip it.
+    const matchedWord = findMatchInVerse(verseObj.text, scriptureName);
+
+    if (!matchedWord)
+        return false;
 
 
     // ==========================================
@@ -1553,7 +1629,7 @@ function displayVerse(
 
     if (
         !skipJerusalemRule &&
-        matchedWord === "jerusalem"
+        scriptureName === "jerusalem"
     ) {
 
         if (seededRandom() < 0.60) {
@@ -1572,7 +1648,7 @@ function displayVerse(
     // 20% CHANCE TO SKIP
     // ==========================================
 
-    if (matchedWord === "egypt") {
+    if (scriptureName === "egypt") {
 
         if (seededRandom() < 0.20) {
 
