@@ -111,7 +111,7 @@ ISRAEL_BBOX = {
     "lat_max": 33.5,
 }
 
-EXPANSION_MAX_LOCATIONS   = 250   # hard cap on new additions
+EXPANSION_MAX_LOCATIONS   = 200   # hard cap on new additions
 EXPANSION_MIN_SEPARATION_MILES = 5  # don't add if something is already this close
 EXPANSION_MIN_REFS        = 1     # must have at least this many KML scripture refs
 
@@ -264,9 +264,9 @@ def make_circle_polygon(center_lon, center_lat, radius_miles, num_points=48):
 # Large land-mass "empire" outlines (e.g. Persia spanning the whole map)
 # get capped down to a Babylon-sized circle. Real seas/lakes are excluded
 # since their full extent is legitimate, not a matching artifact.
-LARGE_REGION_THRESHOLD_MILES = 400
+LARGE_REGION_THRESHOLD_MILES = 500
 CAPPED_REGION_RADIUS_MILES = 150
-LARGE_REGION_CAP_EXCLUSIONS = {"mediterranean sea", "dead sea", "sea of galilee", "red sea"}
+LARGE_REGION_CAP_EXCLUSIONS = {"mediterranean sea", "dead sea", "sea of galilee", "red sea", "adriatic sea"}
 
 # Rank-4 places with nothing else nearby are hard to stumble onto while
 # zoomed in, since their label only appears at max zoom. Anything with no

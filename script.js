@@ -73,6 +73,10 @@ const torahBooks = otBooks.slice(0, 5);
 
 // Historical Books = Joshua through Esther
 const historicalBooks = otBooks.slice(5, 17);
+const joshuaBook = [otBooks[5]];
+
+// Epistles = Romans through Jude (NT letters excluding Revelation)
+const epistlesBooks = ntLetters.slice(0, -1);
 
 
 // ==========================================
@@ -86,7 +90,10 @@ const bibleStructure = {
     "Acts": acts,
     "Torah": torahBooks,
     "Historical Books": historicalBooks,
-    "Entire Bible": [...otBooks, ...ntBooks]
+    "Entire Bible": [...otBooks, ...ntBooks],
+    "Joshua": joshuaBook,       
+    "Epistles": epistlesBooks
+    
 };
 
 
@@ -478,7 +485,11 @@ btnDaily.addEventListener(
 
             "Torah",
 
-            "Historical Books"
+            "Historical Books",
+
+            "Joshua",
+            
+            "Epistles"
         ];
 
         dailySection =
