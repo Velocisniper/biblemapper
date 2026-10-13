@@ -2570,6 +2570,8 @@ btnShare.addEventListener(
 
         const getEmoji =
             (score) => {
+                    if (score >= 1000)
+                    return '✅';
 
                 if (score >= 800)
                     return '🟩';
