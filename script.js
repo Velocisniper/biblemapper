@@ -91,9 +91,8 @@ const bibleStructure = {
     "Torah": torahBooks,
     "Historical Books": historicalBooks,
     "Entire Bible": [...otBooks, ...ntBooks],
-    "Joshua": joshuaBook,       
+    "Joshua": joshuaBook,
     "Epistles": epistlesBooks
-    
 };
 
 
@@ -126,6 +125,123 @@ let dailySection = "";
 
 
 // ==========================================
+// DAILY PROGRESS PERSISTENCE
+//
+// One localStorage entry holds everything needed to
+// resume today's daily game exactly where the player
+// left off:
+//
+//   date      - local date the save belongs to
+//   section   - today's book/section
+//   scores    - scores of completed rounds
+//   used      - locations already used this game
+//   rngState  - seeded RNG state right after the
+//               current round's verse was chosen, so
+//               later rounds are identical for everyone
+//   pick      - the verse of the round in progress:
+//               { round, internalName, ref, bookId,
+//                 startedAt }
+//
+// The timer is computed from pick.startedAt, so
+// refreshing the page does not give extra time.
+// ==========================================
+
+const DAILY_STORAGE_KEY = 'bm_daily_state';
+
+let currentPick = null;       // pick for the round currently on screen
+let pendingResumePick = null; // pick to restore when the next round starts
+const DAILY_TIME_LIMIT = 90;
+const DAILY_ROUNDS = 3;
+
+
+function getTodayString() {
+
+    const d = new Date();
+
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+
+function loadDailyState() {
+
+    try {
+
+        const raw = localStorage.getItem(DAILY_STORAGE_KEY);
+
+        if (!raw)
+            return null;
+
+        const state = JSON.parse(raw);
+
+        if (
+            !state ||
+            state.date !== getTodayString() ||
+            !Array.isArray(state.scores) ||
+            !Array.isArray(state.used) ||
+            typeof state.rngState !== 'number' ||
+            !state.section
+        ) {
+            return null;
+        }
+
+        return state;
+
+    } catch (err) {
+
+        return null;
+    }
+}
+
+
+function persistDaily() {
+
+    if (!isDailyGame)
+        return;
+
+    try {
+
+        localStorage.setItem(
+            DAILY_STORAGE_KEY,
+            JSON.stringify({
+                date: dailyDateString,
+                section: dailySection,
+                scores: roundScores,
+                used: Array.from(usedLocationsThisGame),
+                rngState: seededRandom.getState(),
+                pick: currentPick
+            })
+        );
+
+    } catch (err) {
+
+        console.log("Could not save daily progress.", err);
+    }
+}
+
+
+function updateDailyButton() {
+
+    const state = loadDailyState();
+
+    if (state && state.scores.length >= DAILY_ROUNDS) {
+
+        btnDaily.innerText = "View Daily Results";
+
+    } else if (
+        state &&
+        (state.scores.length > 0 || state.pick)
+    ) {
+
+        btnDaily.innerText = "Resume Daily Game";
+
+    } else {
+
+        btnDaily.innerText = "Play Daily Game";
+    }
+}
+
+
+// ==========================================
 // TIMER VARIABLES
 // ==========================================
 
@@ -136,8 +252,6 @@ let timeRemaining;
 // ==========================================
 // SEEDED RNG LOGIC
 // ==========================================
-
-let seededRandom = Math.random;
 
 function xmur3(str) {
 
@@ -152,9 +266,7 @@ function xmur3(str) {
             3432918353
         );
 
-        h =
-            h << 13 |
-            h >>> 19;
+        h = h << 13 | h >>> 19;
     }
 
     return function () {
@@ -169,51 +281,55 @@ function xmur3(str) {
             3266489909
         );
 
-        return (
-            h ^= h >>> 16
-        ) >>> 0;
+        return (h ^= h >>> 16) >>> 0;
     };
 }
 
 
+// mulberry32 with an exposed state so the daily
+// game can be saved and resumed mid-sequence.
 function mulberry32(a) {
 
-    return function () {
+    const rng = function () {
 
         var t = a += 0x6D2B79F5;
 
-        t =
-            Math.imul(
-                t ^ t >>> 15,
-                t | 1
-            );
+        t = Math.imul(t ^ t >>> 15, t | 1);
 
-        t ^=
-            t +
-            Math.imul(
-                t ^ t >>> 7,
-                t | 61
-            );
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
 
-        return (
-            (t ^ t >>> 14) >>> 0
-        ) / 4294967296;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
+
+    rng.getState = () => a;
+    rng.setState = (s) => { a = s; };
+
+    return rng;
 }
+
+
+// Non-seeded RNG for custom games (same interface).
+function makeUnseededRandom() {
+
+    const rng = () => Math.random();
+
+    rng.getState = () => 0;
+    rng.setState = () => {};
+
+    return rng;
+}
+
+
+let seededRandom = makeUnseededRandom();
 
 
 function initDailySeed() {
 
-    const d = new Date();
+    dailyDateString = getTodayString();
 
-    dailyDateString =
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const seedGen = xmur3(dailyDateString);
 
-    const seedGen =
-        xmur3(dailyDateString);
-
-    seededRandom =
-        mulberry32(seedGen());
+    seededRandom = mulberry32(seedGen());
 }
 
 
@@ -221,68 +337,29 @@ function initDailySeed() {
 // UI NAVIGATION & STATE
 // ==========================================
 
-const startMenu =
-    document.getElementById('start-menu');
-
-const customMenu =
-    document.getElementById('custom-menu');
-
-const summaryMenu =
-    document.getElementById('summary-menu');
-
-const btnGotoCustom =
-    document.getElementById('btn-goto-custom');
-
-const btnBackMain =
-    document.getElementById('btn-back-main');
-
-const btnStartCustom =
-    document.getElementById('btn-start-custom');
-
-const btnDaily =
-    document.getElementById('btn-daily');
-
-const btnSummaryHome =
-    document.getElementById('btn-summary-home');
-
-const btnShare =
-    document.getElementById('btn-share');
-
-const submitBtn =
-    document.getElementById('submit-guess-btn');
-
-const nextBtn =
-    document.getElementById('next-round-btn');
-
-const verseRevealBox =
-    document.getElementById('verse-reveal-box');
-
-const timerDisplay =
-    document.getElementById('timer-display');
+const startMenu = document.getElementById('start-menu');
+const customMenu = document.getElementById('custom-menu');
+const summaryMenu = document.getElementById('summary-menu');
+const btnGotoCustom = document.getElementById('btn-goto-custom');
+const btnBackMain = document.getElementById('btn-back-main');
+const btnStartCustom = document.getElementById('btn-start-custom');
+const btnDaily = document.getElementById('btn-daily');
+const btnSummaryHome = document.getElementById('btn-summary-home');
+const btnShare = document.getElementById('btn-share');
+const submitBtn = document.getElementById('submit-guess-btn');
+const nextBtn = document.getElementById('next-round-btn');
+const verseRevealBox = document.getElementById('verse-reveal-box');
+const timerDisplay = document.getElementById('timer-display');
 
 
 const inputs = {
-
-    translation:
-        document.getElementById('setting-translation'),
-
-    book:
-        document.getElementById('setting-book'),
-
-    keyword:
-        document.getElementById('setting-keyword'),
-
-    labels:
-        document.getElementById('setting-labels'),
-
-    time:
-        document.getElementById('setting-time'),
-
-    rounds:
-        document.getElementById('setting-rounds'),
-
-    bias:
-        document.getElementById('setting-bias')
+    translation: document.getElementById('setting-translation'),
+    book: document.getElementById('setting-book'),
+    keyword: document.getElementById('setting-keyword'),
+    labels: document.getElementById('setting-labels'),
+    time: document.getElementById('setting-time'),
+    rounds: document.getElementById('setting-rounds'),
+    bias: document.getElementById('setting-bias')
 };
 
 
@@ -293,64 +370,37 @@ const inputs = {
 function loadSettings() {
 
     if (localStorage.getItem('bm_translation'))
-        inputs.translation.value =
-            localStorage.getItem('bm_translation');
+        inputs.translation.value = localStorage.getItem('bm_translation');
 
     if (localStorage.getItem('bm_book'))
-        inputs.book.value =
-            localStorage.getItem('bm_book');
+        inputs.book.value = localStorage.getItem('bm_book');
 
     if (localStorage.getItem('bm_keyword'))
-        inputs.keyword.checked =
-            localStorage.getItem('bm_keyword') === 'true';
+        inputs.keyword.checked = localStorage.getItem('bm_keyword') === 'true';
 
     if (localStorage.getItem('bm_labels'))
-        inputs.labels.checked =
-            localStorage.getItem('bm_labels') === 'true';
+        inputs.labels.checked = localStorage.getItem('bm_labels') === 'true';
 
     if (localStorage.getItem('bm_time'))
-        inputs.time.value =
-            localStorage.getItem('bm_time');
+        inputs.time.value = localStorage.getItem('bm_time');
 
     if (localStorage.getItem('bm_rounds'))
-        inputs.rounds.value =
-            localStorage.getItem('bm_rounds');
+        inputs.rounds.value = localStorage.getItem('bm_rounds');
 
     if (localStorage.getItem('bm_bias'))
-        inputs.bias.value =
-            localStorage.getItem('bm_bias');
+        inputs.bias.value = localStorage.getItem('bm_bias');
 }
 
 
 function saveSettings() {
 
-    localStorage.setItem(
-        'bm_translation',
-        inputs.translation.value
-    );
+    localStorage.setItem('bm_translation', inputs.translation.value);
+    localStorage.setItem('bm_book', inputs.book.value);
+    localStorage.setItem('bm_keyword', inputs.keyword.checked);
+    localStorage.setItem('bm_labels', inputs.labels.checked);
+    localStorage.setItem('bm_time', inputs.time.value);
 
-    localStorage.setItem(
-        'bm_book',
-        inputs.book.value
-    );
-
-    localStorage.setItem(
-        'bm_keyword',
-        inputs.keyword.checked
-    );
-
-    localStorage.setItem(
-        'bm_labels',
-        inputs.labels.checked
-    );
-
-    localStorage.setItem(
-        'bm_time',
-        inputs.time.value
-    );
-
-    let r =
-        parseInt(inputs.rounds.value);
+    let r = parseInt(inputs.rounds.value);
 
     if (r < 1)
         r = 1;
@@ -360,24 +410,13 @@ function saveSettings() {
 
     inputs.rounds.value = r;
 
-    localStorage.setItem(
-        'bm_rounds',
-        r
-    );
-
-    localStorage.setItem(
-        'bm_bias',
-        inputs.bias.value
-    );
+    localStorage.setItem('bm_rounds', r);
+    localStorage.setItem('bm_bias', inputs.bias.value);
 }
 
 
 Object.values(inputs).forEach(
-    input =>
-        input.addEventListener(
-            'change',
-            saveSettings
-        )
+    input => input.addEventListener('change', saveSettings)
 );
 
 
@@ -415,34 +454,22 @@ btnStartCustom.addEventListener(
 
         isDailyGame = false;
 
-        seededRandom = Math.random;
+        seededRandom = makeUnseededRandom();
+
+        currentPick = null;
+        pendingResumePick = null;
 
         activeSettings = {
-
-            translation:
-                inputs.translation.value,
-
-            book:
-                inputs.book.value,
-
-            showKeyword:
-                inputs.keyword.checked,
-
-            showLabels:
-                inputs.labels.checked,
-
-            timeLimit:
-                inputs.time.value,
-
-            rounds:
-                parseInt(inputs.rounds.value),
-
-            locationBias:
-                parseInt(inputs.bias.value)
+            translation: inputs.translation.value,
+            book: inputs.book.value,
+            showKeyword: inputs.keyword.checked,
+            showLabels: inputs.labels.checked,
+            timeLimit: inputs.time.value,
+            rounds: parseInt(inputs.rounds.value),
+            locationBias: parseInt(inputs.bias.value)
         };
 
-        totalRounds =
-            activeSettings.rounds;
+        totalRounds = activeSettings.rounds;
 
         currentRound = 1;
 
@@ -461,6 +488,13 @@ btnStartCustom.addEventListener(
 
 // ==========================================
 // DAILY GAME
+//
+// Once per day. Behavior on click:
+//   - all rounds done   -> go straight to the share/results page
+//   - some rounds done  -> drop back into the next unfinished round
+//   - round in progress -> restore that exact verse, with the
+//                          timer continuing from where it was
+//   - nothing played    -> start a fresh game
 // ==========================================
 
 btnDaily.addEventListener(
@@ -472,64 +506,79 @@ btnDaily.addEventListener(
         initDailySeed();
 
         const sections = [
-
             "Entire Bible",
-
             "Old Testament",
-
             "New Testament",
-
             "Gospels",
-
             "Acts",
-
             "Torah",
-
             "Historical Books",
-
             "Joshua",
-            
             "Epistles"
         ];
 
+        // Always consume the same first RNG value so a fresh
+        // game is identical for everyone.
         dailySection =
-            sections[
-                Math.floor(
-                    seededRandom() *
-                    sections.length
-                )
-            ];
+            sections[Math.floor(seededRandom() * sections.length)];
+
+        const saved = loadDailyState();
+
+        currentPick = null;
+        pendingResumePick = null;
+
+        if (saved) {
+
+            dailySection = saved.section;
+
+            seededRandom.setState(saved.rngState);
+
+            roundScores = saved.scores.slice();
+
+            usedLocationsThisGame = new Set(saved.used);
+
+            currentPick = saved.pick || null;
+
+        } else {
+
+            roundScores = [];
+
+            usedLocationsThisGame = new Set();
+
+            persistDaily();
+        }
 
         activeSettings = {
-
             translation: 'ESV',
-
             book: dailySection,
-
             showKeyword: false,
-
             showLabels: true,
-
-            // DAILY GAME = 90 SECONDS
-            timeLimit: '90',
-
-            rounds: 3,
-
+            timeLimit: String(DAILY_TIME_LIMIT),
+            rounds: DAILY_ROUNDS,
             locationBias: 50
         };
 
-        totalRounds =
-            activeSettings.rounds;
-
-        currentRound = 1;
-
-        roundScores = [];
-
-        usedLocationsThisGame = new Set();
+        totalRounds = activeSettings.rounds;
 
         startMenu.style.display = 'none';
 
         updateLabels();
+
+        // Already finished today: straight to the results page.
+        if (roundScores.length >= totalRounds) {
+
+            currentRound = totalRounds;
+
+            showSummary();
+
+            return;
+        }
+
+        currentRound = roundScores.length + 1;
+
+        // Only restore a pick that belongs to the unfinished round.
+        if (currentPick && currentPick.round === currentRound)
+            pendingResumePick = currentPick;
 
         startRound();
     }
@@ -540,27 +589,20 @@ btnDaily.addEventListener(
 // HOW-TO MODAL
 // ==========================================
 
-const howToBtn =
-    document.getElementById('btn-how-to');
-
-const howToModal =
-    document.getElementById('how-to-modal');
-
-const closeModalBtn =
-    document.getElementById('close-modal');
+const howToBtn = document.getElementById('btn-how-to');
+const howToModal = document.getElementById('how-to-modal');
+const closeModalBtn = document.getElementById('close-modal');
 
 
 howToBtn.addEventListener(
     'click',
-    () =>
-        howToModal.style.display = 'flex'
+    () => howToModal.style.display = 'flex'
 );
 
 
 closeModalBtn.addEventListener(
     'click',
-    () =>
-        howToModal.style.display = 'none'
+    () => howToModal.style.display = 'none'
 );
 
 
@@ -578,8 +620,7 @@ window.addEventListener(
 // MAP INITIALIZATION
 // ==========================================
 
-const defaultCenter =
-    [31.7683, 35.2137];
+const defaultCenter = [31.7683, 35.2137];
 
 
 const map =
@@ -598,10 +639,7 @@ const map =
 
             maxZoom: 18
         }
-    ).setView(
-        defaultCenter,
-        6
-    );
+    ).setView(defaultCenter, 6);
 
 
 L.tileLayer(
@@ -617,15 +655,11 @@ L.tileLayer(
 
 
 let playerGuessMarker = null;
-
 let targetMarker = null;
-
 let resultLine = null;
-
 let resultBoundary = null;
 
-let labelGroup =
-    L.featureGroup().addTo(map);
+let labelGroup = L.featureGroup().addTo(map);
 
 let allLabels = [];
 
@@ -643,9 +677,7 @@ map.on(
 
         if (playerGuessMarker) {
 
-            playerGuessMarker.setLatLng(
-                e.latlng
-            );
+            playerGuessMarker.setLatLng(e.latlng);
 
         } else {
 
@@ -654,15 +686,10 @@ map.on(
                     e.latlng,
                     {
                         radius: 7,
-
                         fillColor: "#ff0000",
-
                         color: "#ffffff",
-
                         weight: 2,
-
                         opacity: 1,
-
                         fillOpacity: 1
                     }
                 ).addTo(map);
@@ -672,9 +699,7 @@ map.on(
 
             submitBtn.disabled = false;
 
-            submitBtn.classList.remove(
-                'btn-disabled'
-            );
+            submitBtn.classList.remove('btn-disabled');
         }
     }
 );
@@ -685,10 +710,7 @@ map.on(
 // ==========================================
 
 fetch('./bible_places.geojson')
-    .then(
-        response =>
-            response.json()
-    )
+    .then(response => response.json())
     .then(
         geojsonData => {
 
@@ -699,47 +721,32 @@ fetch('./bible_places.geojson')
                     style:
                         function (feature) {
 
-                            if (
-                                feature.properties.is_water
-                            ) {
+                            if (feature.properties.is_water) {
 
                                 return {
-
                                     color: '#9EBCD8',
-
                                     weight: 3,
-
                                     opacity: 0.9,
-
                                     fillOpacity: 0
                                 };
                             }
 
                             return {
-
                                 opacity: 0,
-
                                 fillOpacity: 0,
-
                                 weight: 0
                             };
                         },
 
 
                     pointToLayer:
-                        function (
-                            feature,
-                            latlng
-                        ) {
+                        function (feature, latlng) {
 
                             return L.circleMarker(
                                 latlng,
                                 {
-
                                     opacity: 0,
-
                                     fillOpacity: 0,
-
                                     radius: 0
                                 }
                             );
@@ -747,28 +754,13 @@ fetch('./bible_places.geojson')
 
 
                     onEachFeature:
-                        function (
-                            feature,
-                            layer
-                        ) {
+                        function (feature, layer) {
 
-                            const importance =
-                                feature.properties.importance;
+                            const importance = feature.properties.importance;
 
-                            const internalName =
-                                feature.properties.name;
+                            const internalName = feature.properties.name;
 
-                            const center =
-                                feature.properties.center;
-
-
-                            /*
-                             * New fields supplied by
-                             * kmlprocess.py:
-                             *
-                             * scripture_name
-                             * references
-                             */
+                            const center = feature.properties.center;
 
                             const scriptureName =
                                 feature.properties.scripture_name ||
@@ -777,26 +769,15 @@ fetch('./bible_places.geojson')
 
                             if (internalName) {
 
-                                const internalLower =
-                                    internalName.toLowerCase();
+                                const internalLower = internalName.toLowerCase();
 
-                                const scriptureLower =
-                                    scriptureName.toLowerCase();
+                                const scriptureLower = scriptureName.toLowerCase();
 
+                                locationCoordinates[internalLower] = center;
 
-                                locationCoordinates[
-                                    internalLower
-                                ] = center;
+                                locationFeatures[internalLower] = feature;
 
-
-                                locationFeatures[
-                                    internalLower
-                                ] = feature;
-
-
-                                locationScriptureNames[
-                                    internalLower
-                                ] = scriptureLower;
+                                locationScriptureNames[internalLower] = scriptureLower;
                             }
 
 
@@ -822,47 +803,32 @@ fetch('./bible_places.geojson')
 
                             const marker =
                                 L.marker(
-                                    [
-                                        center[1],
-                                        center[0]
-                                    ],
+                                    [center[1], center[0]],
                                     {
-
                                         icon:
                                             L.divIcon(
                                                 {
-
-                                                    className:
-                                                        'map-place-label',
+                                                    className: 'map-place-label',
 
                                                     html:
                                                         `<span style="font-size: ${fontSize}; font-weight: ${fontWeight};">${internalName}</span>`,
 
-                                                    iconSize:
-                                                        null
+                                                    iconSize: null
                                                 }
                                             ),
 
-                                        interactive:
-                                            false
+                                        interactive: false
                                     }
                                 );
 
 
-                            marker.importance =
-                                importance;
+                            marker.importance = importance;
 
-                            allLabels.push(
-                                marker
-                            );
+                            allLabels.push(marker);
 
 
-                            if (
-                                feature.properties.is_water
-                            ) {
-
+                            if (feature.properties.is_water)
                                 layer.addTo(map);
-                            }
                         }
                 }
             ).addTo(map);
@@ -870,18 +836,11 @@ fetch('./bible_places.geojson')
 
             updateLabels();
 
-            map.on(
-                'zoomend',
-                updateLabels
-            );
+            map.on('zoomend', updateLabels);
         }
     )
     .catch(
-        err =>
-            console.error(
-                "Map data failed to load!",
-                err
-            )
+        err => console.error("Map data failed to load!", err)
     );
 
 
@@ -898,9 +857,7 @@ function updateLabels() {
         return;
     }
 
-    const currentZoom =
-        map.getZoom();
-
+    const currentZoom = map.getZoom();
 
     let maxAllowedRank =
         currentZoom <= 6
@@ -911,22 +868,13 @@ function updateLabels() {
                     ? 3
                     : 4;
 
-
     labelGroup.clearLayers();
-
 
     allLabels.forEach(
         marker => {
 
-            if (
-                marker.importance <=
-                maxAllowedRank
-            ) {
-
-                labelGroup.addLayer(
-                    marker
-                );
-            }
+            if (marker.importance <= maxAllowedRank)
+                labelGroup.addLayer(marker);
         }
     );
 }
@@ -934,44 +882,40 @@ function updateLabels() {
 
 // ==========================================
 // TIMER
+//
+// remainingOverride (seconds) is used when resuming a
+// daily round so the clock continues instead of resetting.
 // ==========================================
 
-function startTimer() {
+function startTimer(remainingOverride = null) {
 
-    clearInterval(
-        countdownInterval
-    );
+    clearInterval(countdownInterval);
 
-
-    const timeSetting =
-        activeSettings.timeLimit;
-
+    const timeSetting = activeSettings.timeLimit;
 
     if (
-        timeSetting === 'unlimited'
+        timeSetting === 'unlimited' &&
+        remainingOverride === null
     ) {
 
-        timerDisplay.style.display =
-            'none';
+        timerDisplay.style.display = 'none';
 
         return;
     }
 
-
     timeRemaining =
-        parseInt(timeSetting);
-
+        remainingOverride !== null
+            ? remainingOverride
+            : parseInt(timeSetting);
 
     updateTimerDisplay();
 
+    timerDisplay.style.display = 'block';
 
-    timerDisplay.style.display =
-        'block';
+    timerDisplay.classList.remove('timer-warning');
 
-    timerDisplay.classList.remove(
-        'timer-warning'
-    );
-
+    if (timeRemaining <= 10)
+        timerDisplay.classList.add('timer-warning');
 
     countdownInterval =
         setInterval(
@@ -981,28 +925,15 @@ function startTimer() {
 
                 updateTimerDisplay();
 
+                if (timeRemaining <= 10)
+                    timerDisplay.classList.add('timer-warning');
 
-                if (
-                    timeRemaining <= 10
-                ) {
+                if (timeRemaining <= 0) {
 
-                    timerDisplay.classList.add(
-                        'timer-warning'
-                    );
-                }
-
-
-                if (
-                    timeRemaining <= 0
-                ) {
-
-                    clearInterval(
-                        countdownInterval
-                    );
+                    clearInterval(countdownInterval);
 
                     processGuess(true);
                 }
-
             },
             1000
         );
@@ -1011,32 +942,22 @@ function startTimer() {
 
 function stopTimer() {
 
-    clearInterval(
-        countdownInterval
-    );
+    clearInterval(countdownInterval);
 
-    timerDisplay.style.display =
-        'none';
+    timerDisplay.style.display = 'none';
 }
 
 
 function updateTimerDisplay() {
 
-    const m =
-        Math.floor(
-            timeRemaining / 60
-        );
+    const t = Math.max(0, timeRemaining);
 
-    const s =
-        timeRemaining % 60;
+    const m = Math.floor(t / 60);
 
+    const s = t % 60;
 
-    timerDisplay.innerText =
-        `${m}:${s < 10 ? '0' : ''}${s}`;
+    timerDisplay.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
 }
-
-
-
 
 
 // ==========================================
@@ -1047,93 +968,132 @@ function startRound() {
 
     guessSubmitted = false;
 
+    document.getElementById('reopen-verse-btn').style.display = 'none';
 
-    document.getElementById(
-        'reopen-verse-btn'
-    ).style.display = 'none';
+    verseRevealBox.style.display = 'none';
 
-
-    verseRevealBox.style.display =
-        'none';
-
-
-    nextBtn.style.display =
-        'none';
+    nextBtn.style.display = 'none';
 
 
     if (playerGuessMarker) {
 
-        map.removeLayer(
-            playerGuessMarker
-        );
+        map.removeLayer(playerGuessMarker);
 
         playerGuessMarker = null;
     }
 
-
     if (targetMarker) {
 
-        map.removeLayer(
-            targetMarker
-        );
+        map.removeLayer(targetMarker);
 
         targetMarker = null;
     }
 
-
     if (resultLine) {
 
-        map.removeLayer(
-            resultLine
-        );
+        map.removeLayer(resultLine);
 
         resultLine = null;
     }
 
-
     if (resultBoundary) {
 
-        map.removeLayer(
-            resultBoundary
-        );
+        map.removeLayer(resultBoundary);
 
         resultBoundary = null;
     }
 
 
-    currentTargetLocation =
-        null;
+    currentTargetLocation = null;
 
-    currentTargetCenter =
-        null;
+    currentTargetCenter = null;
 
-    currentTargetReference =
-        null;
+    currentTargetReference = null;
 
 
-    map.setView(
-        defaultCenter,
-        6
-    );
+    map.setView(defaultCenter, 6);
 
 
-    submitBtn.style.display =
-        'block';
+    submitBtn.style.display = 'block';
+
+    submitBtn.disabled = true;
+
+    submitBtn.classList.add('btn-disabled');
 
 
-    submitBtn.disabled =
-        true;
+    // Resuming a daily round already in progress:
+    // restore the exact saved verse instead of picking a new one.
+    if (isDailyGame && pendingResumePick) {
 
+        const pick = pendingResumePick;
 
-    submitBtn.classList.add(
-        'btn-disabled'
-    );
+        pendingResumePick = null;
 
+        resumeDailyRound(pick);
+
+        return;
+    }
 
     findPlayableVerse(
         activeSettings.book,
         activeSettings.translation
     );
+}
+
+
+// ==========================================
+// RESUME A DAILY ROUND
+// ==========================================
+
+function resumeDailyRound(pick, attempts = 0) {
+
+    // The map data loads asynchronously; wait for it.
+    if (Object.keys(locationFeatures).length === 0) {
+
+        if (attempts > 50) {
+
+            alert("Map data failed to load. Please refresh the page.");
+
+            return;
+        }
+
+        setTimeout(() => resumeDailyRound(pick, attempts + 1), 200);
+
+        return;
+    }
+
+    const feature = locationFeatures[pick.internalName];
+
+    const bookEntry =
+        bibleStructure["Entire Bible"].find(b => b.id === pick.bookId);
+
+    if (!feature || !bookEntry) {
+
+        // Saved data no longer matches; fall back to a normal pick.
+        findPlayableVerse(activeSettings.book, activeSettings.translation);
+
+        return;
+    }
+
+    fetchVerseFromRef(pick.ref, bookEntry, activeSettings.translation)
+        .then(result => {
+
+            if (
+                !result ||
+                !displayVerse(
+                    feature,
+                    bookEntry,
+                    pick.internalName,
+                    result.chapterData,
+                    result.verseObj,
+                    true,
+                    pick.startedAt
+                )
+            ) {
+
+                findPlayableVerse(activeSettings.book, activeSettings.translation);
+            }
+        });
 }
 
 
@@ -1147,9 +1107,7 @@ function findPlayableVerse(
     attempts = 0
 ) {
 
-    if (
-        attempts > 15
-    ) {
+    if (attempts > 15) {
 
         alert(
             "Could not find a verse with a map location in this section. Please try a different book."
@@ -1159,9 +1117,13 @@ function findPlayableVerse(
     }
 
 
-    if (
-        Object.keys(locationFeatures).length === 0
-    ) {
+    // Map data not loaded yet: wait and try again.
+    if (Object.keys(locationFeatures).length === 0) {
+
+        setTimeout(
+            () => findPlayableVerse(sectionName, translation, attempts),
+            200
+        );
 
         return;
     }
@@ -1178,70 +1140,42 @@ function findPlayableVerse(
     //
     // Otherwise use the "by frequency" method:
     // build a pool of every (location, ref) pair
-    // in this section and pick uniformly. Locations
-    // with many references appear proportionally
-    // more often. The Jerusalem 60% skip only
-    // applies to the frequency path.
+    // in this section and pick uniformly.
     //
-    // Both paths use KML references exclusively —
-    // no verse-text scanning.
+    // Both paths use KML references exclusively.
     // ==========================================
 
     const biasRoll = Math.floor(seededRandom() * 100);
+
     const useLocationMethod =
         biasRoll < (activeSettings.locationBias || 0);
 
     if (useLocationMethod) {
 
-        findPlayableVerseByLocation(
-            sectionName,
-            translation,
-            attempts
-        );
+        findPlayableVerseByLocation(sectionName, translation, attempts);
 
     } else {
 
-        findPlayableVerseByFrequency(
-            sectionName,
-            translation,
-            attempts
-        );
+        findPlayableVerseByFrequency(sectionName, translation, attempts);
     }
 }
 
 
 // ==========================================
 // BY FREQUENCY: reference-pool method
-//
-// Build every (feature, ref) pair for this
-// section. Each pair is one entry, so a
-// location with 100 refs appears 100× more
-// often than one with 1 ref. Pick uniformly.
 // ==========================================
 
-function findPlayableVerseByFrequency(
-    sectionName,
-    translation,
-    attempts
-) {
+function buildReferencePool(sectionBooks, sectionBookIds, skipUsed) {
 
-    const sectionBooks =
-        bibleStructure[sectionName] ||
-        bibleStructure["Acts"];
-
-    const sectionBookIds = new Set(
-        sectionBooks.map(b => b.id)
-    );
-
-    // Build flat pool of {feature, ref, bookEntry} objects.
     const pool = [];
 
     Object.keys(locationFeatures).forEach(internalName => {
 
-        if (usedLocationsThisGame.has(internalName))
+        if (skipUsed && usedLocationsThisGame.has(internalName))
             return;
 
         const feature = locationFeatures[internalName];
+
         const refs = feature.properties.references || [];
 
         refs.forEach(ref => {
@@ -1260,34 +1194,30 @@ function findPlayableVerseByFrequency(
         });
     });
 
+    return pool;
+}
+
+
+function findPlayableVerseByFrequency(
+    sectionName,
+    translation,
+    attempts
+) {
+
+    const sectionBooks =
+        bibleStructure[sectionName] ||
+        bibleStructure["Acts"];
+
+    const sectionBookIds = new Set(sectionBooks.map(b => b.id));
+
+    let pool = buildReferencePool(sectionBooks, sectionBookIds, true);
 
     if (pool.length === 0) {
 
-        // No unused locations — retry without the used-location filter.
-        const fallbackPool = [];
+        // No unused locations: retry without the used-location filter.
+        pool = buildReferencePool(sectionBooks, sectionBookIds, false);
 
-        Object.keys(locationFeatures).forEach(internalName => {
-
-            const feature = locationFeatures[internalName];
-            const refs = feature.properties.references || [];
-
-            refs.forEach(ref => {
-
-                const bookId = ref.split(' ')[0];
-
-                if (!sectionBookIds.has(bookId))
-                    return;
-
-                const bookEntry = sectionBooks.find(b => b.id === bookId);
-
-                if (!bookEntry)
-                    return;
-
-                fallbackPool.push({ feature, ref, bookEntry, internalName });
-            });
-        });
-
-        if (fallbackPool.length === 0) {
+        if (pool.length === 0) {
 
             alert(
                 "Could not find a verse with a map location in this section. Please try a different book."
@@ -1295,31 +1225,9 @@ function findPlayableVerseByFrequency(
 
             return;
         }
-
-        const pick =
-            fallbackPool[
-                Math.floor(seededRandom() * fallbackPool.length)
-            ];
-
-        loadAndDisplayVerseFromRef(
-            pick.feature,
-            pick.ref,
-            pick.bookEntry,
-            pick.internalName,
-            sectionName,
-            translation,
-            attempts,
-            false   // apply Jerusalem skip on frequency path
-        );
-
-        return;
     }
 
-
-    const pick =
-        pool[
-            Math.floor(seededRandom() * pool.length)
-        ];
+    const pick = pool[Math.floor(seededRandom() * pool.length)];
 
     loadAndDisplayVerseFromRef(
         pick.feature,
@@ -1348,13 +1256,8 @@ function findPlayableVerseByLocation(
         bibleStructure[sectionName] ||
         bibleStructure["Acts"];
 
-    const sectionBookIds = new Set(
-        sectionBooks.map(b => b.id)
-    );
+    const sectionBookIds = new Set(sectionBooks.map(b => b.id));
 
-    // Gather all location features that have at
-    // least one KML-vetted reference in this section
-    // and haven't been used this game yet.
     const candidateLocations = Object.keys(locationFeatures)
         .filter(internalName => {
 
@@ -1362,30 +1265,21 @@ function findPlayableVerseByLocation(
                 return false;
 
             const refs =
-                locationFeatures[internalName]
-                    .properties.references || [];
+                locationFeatures[internalName].properties.references || [];
 
-            return refs.some(ref => {
-                const bookId = ref.split(' ')[0];
-                return sectionBookIds.has(bookId);
-            });
+            return refs.some(ref => sectionBookIds.has(ref.split(' ')[0]));
         });
 
 
     if (candidateLocations.length === 0) {
 
         // Fall back to frequency method if all locations used
-        findPlayableVerseByFrequency(
-            sectionName,
-            translation,
-            attempts
-        );
+        findPlayableVerseByFrequency(sectionName, translation, attempts);
 
         return;
     }
 
 
-    // Pick a random location (equal weight).
     const randomInternalName =
         candidateLocations[
             Math.floor(seededRandom() * candidateLocations.length)
@@ -1393,30 +1287,27 @@ function findPlayableVerseByLocation(
 
     const feature = locationFeatures[randomInternalName];
 
-    // Filter references to this section, then pick one.
     const sectionRefs = (feature.properties.references || [])
-        .filter(ref => {
-            const bookId = ref.split(' ')[0];
-            return sectionBookIds.has(bookId);
-        });
+        .filter(ref => sectionBookIds.has(ref.split(' ')[0]));
 
     if (sectionRefs.length === 0) {
 
         findPlayableVerse(sectionName, translation, attempts + 1);
+
         return;
     }
 
     const randomRef =
-        sectionRefs[
-            Math.floor(seededRandom() * sectionRefs.length)
-        ];
+        sectionRefs[Math.floor(seededRandom() * sectionRefs.length)];
 
     const bookId = randomRef.split(' ')[0];
+
     const bookEntry = sectionBooks.find(b => b.id === bookId);
 
     if (!bookEntry) {
 
         findPlayableVerse(sectionName, translation, attempts + 1);
+
         return;
     }
 
@@ -1434,13 +1325,67 @@ function findPlayableVerseByLocation(
 
 
 // ==========================================
-// LOAD VERSE FROM KML REFERENCE
+// FETCH A VERSE FROM A KML REFERENCE
 //
-// Fetches the book JSON, finds the exact
-// chapter and verse identified by the KML
-// reference string (e.g. "ACT 11:19"), then
-// calls displayVerse. Both game paths use
-// this — no verse-text scanning.
+// Resolves to { chapterData, verseObj } or null
+// if the reference can't be resolved.
+// ==========================================
+
+function fetchVerseFromRef(ref, bookEntry, translation) {
+
+    // Parse ref: e.g. "ACT 11:19" -> chapter=11, verse=19
+    const refParts = ref.split(' ');
+
+    const chapterVerse = (refParts[1] || '').split(':');
+
+    const targetChapterNum = parseInt(chapterVerse[0]);
+
+    const targetVerseNum = parseInt(chapterVerse[1]);
+
+    if (!targetChapterNum || !targetVerseNum)
+        return Promise.resolve(null);
+
+    const filePath =
+        `./BibleMapper_Data/${bookEntry.testament}/${bookEntry.id}/${translation}.json`;
+
+    return fetch(filePath)
+        .then(response => {
+
+            if (!response.ok)
+                throw new Error(`HTTP ${response.status}`);
+
+            return response.json();
+        })
+        .then(bookData => {
+
+            if (!bookData.text || !Array.isArray(bookData.text))
+                return null;
+
+            const chapterData = bookData.text.find(ch => {
+                const chNum = parseInt((ch.ID || '').split('.').pop());
+                return chNum === targetChapterNum;
+            });
+
+            if (!chapterData || !Array.isArray(chapterData.text))
+                return null;
+
+            // Verse IDs can have duplicates (poetry), so take the
+            // first match — the opening line reads best as a clue.
+            const verseObj = chapterData.text.find(v =>
+                parseInt(v.ID) === targetVerseNum
+            );
+
+            if (!verseObj)
+                return null;
+
+            return { chapterData, verseObj };
+        })
+        .catch(() => null);
+}
+
+
+// ==========================================
+// LOAD VERSE FROM KML REFERENCE
 // ==========================================
 
 function loadAndDisplayVerseFromRef(
@@ -1454,62 +1399,13 @@ function loadAndDisplayVerseFromRef(
     skipJerusalemRule
 ) {
 
-    // Parse ref: e.g. "ACT 11:19" -> chapter=11, verse=19
-    const refParts     = ref.split(' ');
-    const chapterVerse = (refParts[1] || '').split(':');
-    const targetChapterNum = parseInt(chapterVerse[0]);
-    const targetVerseNum   = parseInt(chapterVerse[1]);
+    fetchVerseFromRef(ref, bookEntry, translation)
+        .then(result => {
 
-    if (!targetChapterNum || !targetVerseNum) {
-
-        findPlayableVerse(sectionName, translation, attempts + 1);
-        return;
-    }
-
-    const filePath =
-        `./BibleMapper_Data/${bookEntry.testament}/${bookEntry.id}/${translation}.json`;
-
-    fetch(filePath)
-        .then(response => {
-
-            if (!response.ok)
-                throw new Error(`HTTP ${response.status}`);
-
-            return response.json();
-        })
-        .then(bookData => {
-
-            if (
-                !bookData.text ||
-                !Array.isArray(bookData.text)
-            ) {
+            if (!result) {
 
                 findPlayableVerse(sectionName, translation, attempts + 1);
-                return;
-            }
 
-            // Find the chapter whose ID ends with ".<targetChapterNum>".
-            const chapterData = bookData.text.find(ch => {
-                const chNum = parseInt((ch.ID || '').split('.').pop());
-                return chNum === targetChapterNum;
-            });
-
-            if (!chapterData || !Array.isArray(chapterData.text)) {
-
-                findPlayableVerse(sectionName, translation, attempts + 1);
-                return;
-            }
-
-            // Find the verse. Verse IDs can have duplicates (poetry),
-            // so we take the first match — the opening line is most
-            // readable as a standalone clue.
-            const verseObj = chapterData.text.find(v =>
-                parseInt(v.ID) === targetVerseNum
-            );
-
-            if (!verseObj) {
-
-                findPlayableVerse(sectionName, translation, attempts + 1);
                 return;
             }
 
@@ -1518,30 +1414,17 @@ function loadAndDisplayVerseFromRef(
                     feature,
                     bookEntry,
                     internalName,
-                    chapterData,
-                    verseObj,
+                    result.chapterData,
+                    result.verseObj,
                     skipJerusalemRule
                 )
             ) {
 
                 findPlayableVerse(sectionName, translation, attempts + 1);
             }
-        })
-        .catch(() => {
-
-            findPlayableVerse(sectionName, translation, attempts + 1);
         });
 }
 
-
-// ==========================================
-// DISPLAY VERSE
-//
-// Applies skip rules, sets game globals,
-// opens the scripture window, and starts
-// the timer. Returns false if a skip rule
-// fired (caller should retry).
-// ==========================================
 
 // ==========================================
 // FIND MATCH IN VERSE
@@ -1551,19 +1434,10 @@ function loadAndDisplayVerseFromRef(
 // that actually appears in the verse (so we
 // know what word to blank). Returns null if
 // nothing matches.
-//
-// Strategy:
-// 1. Try the full scripture_name first.
-// 2. For multi-word names, try contiguous
-//    sub-phrases longest-first.
-// 3. Single sub-words must be >= 4 chars to
-//    avoid matching generic words like "Sea",
-//    "Red", "Hor". Short names used as a whole
-//    (Ai, Uz, Sin) are always tried in step 1.
 // ==========================================
 
 const VERSE_STOP_WORDS =
-    new Set(['the','of','and','a','an','in','at','to','for','by','with','beyond']);
+    new Set(['the', 'of', 'and', 'a', 'an', 'in', 'at', 'to', 'for', 'by', 'with', 'beyond']);
 
 function findMatchInVerse(verseText, scriptureName) {
 
@@ -1578,6 +1452,7 @@ function findMatchInVerse(verseText, scriptureName) {
 
     // 2. Single-word name that didn't match — nothing else to try
     const words = scriptureName.split(' ');
+
     if (words.length === 1)
         return null;
 
@@ -1587,16 +1462,16 @@ function findMatchInVerse(verseText, scriptureName) {
         for (let start = 0; start <= words.length - length; start++) {
 
             const phraseWords = words.slice(start, start + length);
-            const phrase      = phraseWords.join(' ');
 
-            // Skip phrases made entirely of stop words
+            const phrase = phraseWords.join(' ');
+
             const meaningful = phraseWords.filter(
                 w => !VERSE_STOP_WORDS.has(w.toLowerCase())
             );
+
             if (meaningful.length === 0)
                 continue;
 
-            // Single sub-word: must be long enough to be distinctive
             if (length === 1 && phrase.length < 4)
                 continue;
 
@@ -1612,62 +1487,65 @@ function findMatchInVerse(verseText, scriptureName) {
 }
 
 
+// ==========================================
+// DISPLAY VERSE
+//
+// Applies skip rules, sets game globals,
+// opens the scripture window, and starts
+// the timer. Returns false if a skip rule
+// fired (caller should retry).
+//
+// resumeStartedAt: when restoring a saved daily round,
+// the original start timestamp. Skip rules are bypassed
+// (and no RNG is consumed) and the timer continues.
+// ==========================================
+
 function displayVerse(
     feature,
     bookEntry,
     internalName,
     chapterData,
     verseObj,
-    skipJerusalemRule
+    skipJerusalemRule,
+    resumeStartedAt = null
 ) {
 
-    // The scripture_name is what the location is called in Bible text.
+    const isResume = resumeStartedAt !== null;
+
     const scriptureName =
         (feature.properties.scripture_name || "").toLowerCase();
 
-    // Find the actual word/phrase from scripture_name present in this
-    // verse. If nothing matches, this ref isn't usable — skip it.
     const matchedWord = findMatchInVerse(verseObj.text, scriptureName);
 
     if (!matchedWord)
         return false;
 
 
-    // ==========================================
-    // JERUSALEM SKIP
-    // 60% CHANCE TO SKIP (frequency path only)
-    // ==========================================
+    if (!isResume) {
 
-    if (
-        !skipJerusalemRule &&
-        scriptureName === "jerusalem"
-    ) {
+        // JERUSALEM SKIP: 60% chance (frequency path only)
+        if (
+            !skipJerusalemRule &&
+            scriptureName === "jerusalem"
+        ) {
 
-        if (seededRandom() < 0.60) {
+            if (seededRandom() < 0.60) {
 
-            console.log(
-                "Jerusalem selected, skipping due to 60% rule."
-            );
+                console.log("Jerusalem selected, skipping due to 60% rule.");
 
-            return false;
+                return false;
+            }
         }
-    }
 
+        // EGYPT SKIP: 20% chance
+        if (scriptureName === "egypt") {
 
-    // ==========================================
-    // EGYPT SKIP
-    // 20% CHANCE TO SKIP
-    // ==========================================
+            if (seededRandom() < 0.20) {
 
-    if (scriptureName === "egypt") {
+                console.log("Egypt selected, skipping due to 20% rule.");
 
-        if (seededRandom() < 0.20) {
-
-            console.log(
-                "Egypt selected, skipping due to 20% rule."
-            );
-
-            return false;
+                return false;
+            }
         }
     }
 
@@ -1686,16 +1564,57 @@ function displayVerse(
 
     // Build the display reference: e.g. "1CO 16:19"
     const chapterNum = (chapterData.ID || "").split(".").pop();
-    const verseNum   = verseObj.ID || "";
+
+    const verseNum = verseObj.ID || "";
+
     currentTargetReference =
         (bookEntry.id && chapterNum && verseNum)
             ? `${bookEntry.id} ${chapterNum}:${verseNum}`
             : null;
 
 
+    // Save the round so a refresh/return drops the player back here.
+    const startedAt = isResume ? resumeStartedAt : Date.now();
+
+    if (isDailyGame) {
+
+        currentPick = {
+            round: currentRound,
+            internalName: internalName,
+            ref: currentTargetReference,
+            bookId: bookEntry.id,
+            startedAt: startedAt
+        };
+
+        persistDaily();
+    }
+
+
     openScriptureWindow(chapterData, verseObj, matchedWord);
 
-    startTimer();
+
+    if (isDailyGame) {
+
+        const limit = parseInt(activeSettings.timeLimit);
+
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+
+        const remaining = limit - elapsed;
+
+        if (remaining <= 0) {
+
+            // Time ran out while the player was away.
+            processGuess(true);
+
+        } else {
+
+            startTimer(remaining);
+        }
+
+    } else {
+
+        startTimer();
+    }
 
     return true;
 }
@@ -1709,53 +1628,29 @@ submitBtn.addEventListener(
     'click',
     function () {
 
-        if (
-            this.disabled
-        ) {
-
+        if (this.disabled)
             return;
-        }
-
 
         processGuess(false);
     }
 );
 
 
-function processGuess(
-    isTimeout = false
-) {
+function processGuess(isTimeout = false) {
 
-    if (
-        guessSubmitted
-    ) {
-
+    if (guessSubmitted)
         return;
-    }
-
 
     guessSubmitted = true;
 
-
     stopTimer();
 
+    submitBtn.disabled = true;
 
-    submitBtn.disabled =
-        true;
+    submitBtn.classList.add('btn-disabled');
 
-
-    submitBtn.classList.add(
-        'btn-disabled'
-    );
-
-
-    if (
-        !playerGuessMarker &&
-        !isTimeout
-    ) {
-
+    if (!playerGuessMarker && !isTimeout)
         return;
-    }
 
 
     let score = 0;
@@ -1776,33 +1671,19 @@ function processGuess(
     // NO GUESS / TIMEOUT
     // ==========================================
 
-    if (
-        !playerGuessMarker &&
-        isTimeout
-    ) {
+    if (!playerGuessMarker && isTimeout) {
 
         score = 0;
 
-        excl =
-            "Time's Up! No guess placed.";
+        excl = "Time's Up! No guess placed.";
 
+        roundScores.push(score);
 
-        roundScores.push(
-            score
-        );
+        persistDaily();
 
+        document.getElementById('scripture-modal').style.display = 'none';
 
-        document.getElementById(
-            'scripture-modal'
-        ).style.display =
-            'none';
-
-
-        document.getElementById(
-            'reopen-verse-btn'
-        ).style.display =
-            'none';
-
+        document.getElementById('reopen-verse-btn').style.display = 'none';
 
         showResult(
             endLatLng,
@@ -1814,32 +1695,17 @@ function processGuess(
             true
         );
 
-
         return;
     }
 
 
-    const startLatLng =
-        playerGuessMarker.getLatLng();
+    const startLatLng = playerGuessMarker.getLatLng();
 
+    const pt = turf.point([startLatLng.lng, startLatLng.lat]);
 
-    const pt =
-        turf.point(
-            [
-                startLatLng.lng,
-                startLatLng.lat
-            ]
-        );
-
-
-    const feature =
-        locationFeatures[
-            currentTargetLocation
-        ];
-
+    const feature = locationFeatures[currentTargetLocation];
 
     let isInside = false;
-
 
     let closestLngLat = [
         currentTargetCenter[0],
@@ -1852,58 +1718,34 @@ function processGuess(
     // ==========================================
 
     if (
-        feature.geometry.type ===
-            'Polygon' ||
-        feature.geometry.type ===
-            'MultiPolygon'
+        feature.geometry.type === 'Polygon' ||
+        feature.geometry.type === 'MultiPolygon'
     ) {
 
-        isInside =
-            turf.booleanPointInPolygon(
-                pt,
-                feature
-            );
-
+        isInside = turf.booleanPointInPolygon(pt, feature);
 
         if (!isInside) {
 
-            const lines =
-                turf.polygonToLine(
-                    feature
-                );
+            const lines = turf.polygonToLine(feature);
 
+            let closest = null;
 
-            let closest =
-                null;
-
-            let minDist =
-                Infinity;
-
+            let minDist = Infinity;
 
             turf.flattenEach(
                 lines,
-                function (
-                    currentFeature
-                ) {
+                function (currentFeature) {
 
                     const snap =
                         turf.nearestPointOnLine(
                             currentFeature,
                             pt,
-                            {
-                                units:
-                                    'miles'
-                            }
+                            { units: 'miles' }
                         );
 
+                    const d = snap.properties.dist;
 
-                    const d =
-                        snap.properties.dist;
-
-
-                    if (
-                        d < minDist
-                    ) {
+                    if (d < minDist) {
 
                         minDist = d;
 
@@ -1912,16 +1754,11 @@ function processGuess(
                 }
             );
 
-
             if (closest) {
 
-                distanceMiles =
-                    minDist;
+                distanceMiles = minDist;
 
-                closestLngLat =
-                    closest
-                        .geometry
-                        .coordinates;
+                closestLngLat = closest.geometry.coordinates;
             }
         }
     }
@@ -1931,34 +1768,18 @@ function processGuess(
     // LINESTRING / RIVER
     // ==========================================
 
-    else if (
-        feature.geometry.type ===
-        'LineString'
-    ) {
-
-        /*
-         * Use the actual nearest point
-         * on the river/LineString.
-         */
+    else if (feature.geometry.type === 'LineString') {
 
         const snap =
             turf.nearestPointOnLine(
                 feature,
                 pt,
-                {
-                    units:
-                        'miles'
-                }
+                { units: 'miles' }
             );
 
+        distanceMiles = snap.properties.dist;
 
-        distanceMiles =
-            snap.properties.dist;
-
-
-        closestLngLat =
-            snap.geometry
-                .coordinates;
+        closestLngLat = snap.geometry.coordinates;
     }
 
 
@@ -1972,37 +1793,21 @@ function processGuess(
             turf.distance(
                 pt,
                 feature,
-                {
-                    units:
-                        'miles'
-                }
+                { units: 'miles' }
             );
     }
 
 
     // ==========================================
     // SCORING
+    //
+    // GOSPELS: 0 points at 600 miles.
+    // Everything else: 0 points at 1000 miles.
     // ==========================================
 
-    /*
-     * GOSPELS:
-     *
-     * 0 points at 600 miles.
-     *
-     * Everything else:
-     *
-     * 0 points at 1000 miles.
-     */
+    const isGospelGame = activeSettings.book === "Gospels";
 
-    const isGospelGame =
-        activeSettings.book ===
-        "Gospels";
-
-
-    const zeroPointDistance =
-        isGospelGame
-            ? 600
-            : 1000;
+    const zeroPointDistance = isGospelGame ? 600 : 1000;
 
 
     if (
@@ -2014,10 +1819,7 @@ function processGuess(
 
         distanceMiles = 0;
 
-    } else if (
-        distanceMiles >=
-        zeroPointDistance
-    ) {
+    } else if (distanceMiles >= zeroPointDistance) {
 
         score = 0;
 
@@ -2032,9 +1834,7 @@ function processGuess(
                         -(distanceMiles - 3) *
                         (
                             Math.log(1000) /
-                            (
-                                zeroPointDistance - 3
-                            )
+                            (zeroPointDistance - 3)
                         )
                     )
                 )
@@ -2042,9 +1842,9 @@ function processGuess(
     }
 
 
-    roundScores.push(
-        score
-    );
+    roundScores.push(score);
+
+    persistDaily();
 
 
     // ==========================================
@@ -2053,79 +1853,43 @@ function processGuess(
 
     if (isTimeout) {
 
-        excl =
-            "Time's Up!";
+        excl = "Time's Up!";
 
     } else {
 
         let exclamations = [];
 
+        if (score === 1000) {
 
-        if (
-            score === 1000
-        ) {
+            exclamations = ["Perfect!", "Great Job!"];
 
-            exclamations = [
-                "Perfect!",
-                "Great Job!"
-            ];
+        } else if (score >= 900) {
 
-        } else if (
-            score >= 900
-        ) {
+            exclamations = ["Great!", "Awesome!"];
 
-            exclamations = [
-                "Great!",
-                "Awesome!"
-            ];
+        } else if (score >= 700) {
 
-        } else if (
-            score >= 700
-        ) {
+            exclamations = ["Nice Job!", "Not Bad!"];
 
-            exclamations = [
-                "Nice Job!",
-                "Not Bad!"
-            ];
+        } else if (score >= 400) {
 
-        } else if (
-            score >= 400
-        ) {
-
-            exclamations = [
-                "Alright!",
-                "Good Try!"
-            ];
+            exclamations = ["Alright!", "Good Try!"];
 
         } else {
 
-            exclamations = [
-                "Better luck next time.",
-                "Too bad."
-            ];
+            exclamations = ["Better luck next time.", "Too bad."];
         }
-
 
         excl =
             exclamations[
-                Math.floor(
-                    Math.random() *
-                    exclamations.length
-                )
+                Math.floor(Math.random() * exclamations.length)
             ];
     }
 
 
-    document.getElementById(
-        'scripture-modal'
-    ).style.display =
-        'none';
+    document.getElementById('scripture-modal').style.display = 'none';
 
-
-    document.getElementById(
-        'reopen-verse-btn'
-    ).style.display =
-        'none';
+    document.getElementById('reopen-verse-btn').style.display = 'none';
 
 
     endLatLng =
@@ -2176,102 +1940,50 @@ function animateLine(
 ) {
 
     if (resultLine)
-        map.removeLayer(
-            resultLine
-        );
-
+        map.removeLayer(resultLine);
 
     resultLine =
         L.polyline(
-            [
-                start,
-                start
-            ],
+            [start, start],
             {
-
                 color: '#1a1a1a',
-
                 weight: 3,
-
                 dashArray: '8, 8',
-
                 lineCap: 'round',
-
                 opacity: 0.8
             }
         ).addTo(map);
 
 
-    const duration =
-        600;
+    const duration = 600;
+
+    const startTime = performance.now();
 
 
-    const startTime =
-        performance.now();
+    function step(currentTime) {
 
+        const elapsed = currentTime - startTime;
 
-    function step(
-        currentTime
-    ) {
+        const progress = Math.min(elapsed / duration, 1);
 
-        const elapsed =
-            currentTime -
-            startTime;
-
-
-        const progress =
-            Math.min(
-                elapsed /
-                    duration,
-                1
-            );
-
-
-        const easeProgress =
-            1 -
-            Math.pow(
-                1 -
-                progress,
-                3
-            );
-
+        const easeProgress = 1 - Math.pow(1 - progress, 3);
 
         const currentLat =
-            start.lat +
-            (
-                end.lat -
-                start.lat
-            ) *
-            easeProgress;
-
+            start.lat + (end.lat - start.lat) * easeProgress;
 
         const currentLng =
-            start.lng +
-            (
-                end.lng -
-                start.lng
-            ) *
-            easeProgress;
-
+            start.lng + (end.lng - start.lng) * easeProgress;
 
         resultLine.setLatLngs(
             [
                 start,
-                L.latLng(
-                    currentLat,
-                    currentLng
-                )
+                L.latLng(currentLat, currentLng)
             ]
         );
 
+        if (progress < 1) {
 
-        if (
-            progress < 1
-        ) {
-
-            requestAnimationFrame(
-                step
-            );
+            requestAnimationFrame(step);
 
         } else {
 
@@ -2287,10 +1999,7 @@ function animateLine(
         }
     }
 
-
-    requestAnimationFrame(
-        step
-    );
+    requestAnimationFrame(step);
 }
 
 
@@ -2312,35 +2021,24 @@ function showResult(
         L.circleMarker(
             end,
             {
-
                 radius: 7,
-
                 fillColor: "#00ff00",
-
                 color: "#ffffff",
-
                 weight: 2,
-
                 opacity: 1,
-
                 fillOpacity: 1
             }
         ).addTo(map);
 
 
-    const feature =
-        locationFeatures[
-            currentTargetLocation
-        ];
+    const feature = locationFeatures[currentTargetLocation];
 
 
     if (
         feature &&
         (
-            feature.geometry.type ===
-                'Polygon' ||
-            feature.geometry.type ===
-                'MultiPolygon'
+            feature.geometry.type === 'Polygon' ||
+            feature.geometry.type === 'MultiPolygon'
         )
     ) {
 
@@ -2348,15 +2046,10 @@ function showResult(
             L.geoJSON(
                 feature,
                 {
-
                     style: {
-
                         color: '#00ff00',
-
                         weight: 3,
-
                         fillColor: '#00ff00',
-
                         fillOpacity: 0.3
                     },
 
@@ -2367,9 +2060,7 @@ function showResult(
 
 
     const displayLocationName =
-        locationScriptureNames[
-            currentTargetLocation
-        ] ||
+        locationScriptureNames[currentTargetLocation] ||
         currentTargetLocation;
 
 
@@ -2411,52 +2102,28 @@ function showResult(
         `;
 
 
-    verseRevealBox.style.display =
-        'block';
+    verseRevealBox.style.display = 'block';
 
-
-    nextBtn.style.display =
-        'block';
+    nextBtn.style.display = 'block';
 
 
     if (noGuess) {
 
-        map.flyTo(
-            end,
-            8,
-            {
-                duration: 1.5
-            }
-        );
+        map.flyTo(end, 8, { duration: 1.5 });
 
     } else if (isPerfect) {
 
-        map.flyTo(
-            start,
-            9,
-            {
-                duration: 1.5
-            }
-        );
+        map.flyTo(start, 9, { duration: 1.5 });
 
     } else {
 
-        const bounds =
-            L.latLngBounds(
-                start,
-                end
-            );
-
+        const bounds = L.latLngBounds(start, end);
 
         map.flyToBounds(
             bounds,
             {
-
-                padding:
-                    [100, 100],
-
+                padding: [100, 100],
                 maxZoom: 10,
-
                 duration: 1.5
             }
         );
@@ -2472,10 +2139,7 @@ nextBtn.addEventListener(
     'click',
     () => {
 
-        if (
-            currentRound <
-            totalRounds
-        ) {
+        if (currentRound < totalRounds) {
 
             currentRound++;
 
@@ -2491,72 +2155,45 @@ nextBtn.addEventListener(
 
 function showSummary() {
 
-    verseRevealBox.style.display =
-        'none';
+    verseRevealBox.style.display = 'none';
+
+    nextBtn.style.display = 'none';
+
+    submitBtn.style.display = 'none';
+
+    document.getElementById('scripture-modal').style.display = 'none';
+
+    document.getElementById('reopen-verse-btn').style.display = 'none';
+
+    stopTimer();
 
 
-    nextBtn.style.display =
-        'none';
+    const scoresDiv = document.getElementById('summary-scores');
 
-
-    submitBtn.style.display =
-        'none';
-
-
-    const scoresDiv =
-        document.getElementById(
-            'summary-scores'
-        );
-
-
-    const averageDiv =
-        document.getElementById(
-            'summary-average'
-        );
-
+    const averageDiv = document.getElementById('summary-average');
 
     let html = "";
 
     let sum = 0;
 
-
     roundScores.forEach(
         (s, i) => {
 
-            html +=
-                `<div>Round ${i + 1}: <strong>${s}</strong></div>`;
+            html += `<div>Round ${i + 1}: <strong>${s}</strong></div>`;
 
             sum += s;
         }
     );
 
+    scoresDiv.innerHTML = html;
 
-    scoresDiv.innerHTML =
-        html;
+    let avg = Math.round(sum / roundScores.length);
 
+    averageDiv.innerHTML = `Average Score: ${avg} / 1000`;
 
-    let avg =
-        Math.round(
-            sum /
-            roundScores.length
-        );
+    btnShare.style.display = isDailyGame ? 'block' : 'none';
 
-
-    averageDiv.innerHTML =
-        `Average Score: ${avg} / 1000`;
-
-
-    if (isDailyGame)
-        btnShare.style.display =
-            'block';
-
-    else
-        btnShare.style.display =
-            'none';
-
-
-    summaryMenu.style.display =
-        'flex';
+    summaryMenu.style.display = 'flex';
 }
 
 
@@ -2570,7 +2207,8 @@ btnShare.addEventListener(
 
         const getEmoji =
             (score) => {
-                    if (score >= 1000)
+
+                if (score >= 1000)
                     return '✅';
 
                 if (score >= 800)
@@ -2583,25 +2221,13 @@ btnShare.addEventListener(
             };
 
 
-        let sum =
-            roundScores.reduce(
-                (a, b) =>
-                    a + b,
-                0
-            );
+        let sum = roundScores.reduce((a, b) => a + b, 0);
 
-
-        let avg =
-            Math.round(
-                sum /
-                roundScores.length
-            );
-
+        let avg = Math.round(sum / roundScores.length);
 
         let shareText =
             `Daily Bible Mapper -\n` +
             `${dailyDateString} - ${dailySection}\n`;
-
 
         roundScores.forEach(
             (score, i) => {
@@ -2611,62 +2237,31 @@ btnShare.addEventListener(
             }
         );
 
-
-        shareText +=
-            `Average: ${avg} ${getEmoji(avg)}`;
+        shareText += `Average: ${avg} ${getEmoji(avg)}`;
 
 
         const isMobile =
             /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
-                .test(
-                    navigator.userAgent
-                );
+                .test(navigator.userAgent);
 
 
-        if (
-            isMobile &&
-            navigator.share
-        ) {
+        if (isMobile && navigator.share) {
 
             try {
 
-                await navigator.share(
-                    {
-                        text:
-                            shareText
-                    }
-                );
+                await navigator.share({ text: shareText });
 
             } catch (err) {
 
-                console.log(
-                    "Share cancelled or failed.",
-                    err
-                );
+                console.log("Share cancelled or failed.", err);
             }
 
         } else {
 
             navigator.clipboard
-                .writeText(
-                    shareText
-                )
-                .then(
-                    () => {
-
-                        alert(
-                            'Results copied to clipboard!'
-                        );
-                    }
-                )
-                .catch(
-                    err => {
-
-                        alert(
-                            'Failed to copy text.'
-                        );
-                    }
-                );
+                .writeText(shareText)
+                .then(() => alert('Results copied to clipboard!'))
+                .catch(() => alert('Failed to copy text.'));
         }
     }
 );
@@ -2680,61 +2275,49 @@ btnSummaryHome.addEventListener(
     'click',
     () => {
 
-        summaryMenu.style.display =
-            'none';
+        summaryMenu.style.display = 'none';
 
-
-        startMenu.style.display =
-            'flex';
-
+        startMenu.style.display = 'flex';
 
         stopTimer();
 
+        isDailyGame = false;
+
+        currentPick = null;
+
+        pendingResumePick = null;
 
         if (playerGuessMarker) {
 
-            map.removeLayer(
-                playerGuessMarker
-            );
+            map.removeLayer(playerGuessMarker);
 
             playerGuessMarker = null;
         }
 
-
         if (targetMarker) {
 
-            map.removeLayer(
-                targetMarker
-            );
+            map.removeLayer(targetMarker);
 
             targetMarker = null;
         }
 
-
         if (resultLine) {
 
-            map.removeLayer(
-                resultLine
-            );
+            map.removeLayer(resultLine);
 
             resultLine = null;
         }
 
-
         if (resultBoundary) {
 
-            map.removeLayer(
-                resultBoundary
-            );
+            map.removeLayer(resultBoundary);
 
             resultBoundary = null;
         }
 
+        map.setView(defaultCenter, 6);
 
-        map.setView(
-            defaultCenter,
-            6
-        );
+        updateDailyButton();
     }
 );
 
@@ -2749,55 +2332,30 @@ function openScriptureWindow(
     matchedWord
 ) {
 
-    const chapterContainer =
-        document.getElementById(
-            'chapter-text'
-        );
+    const chapterContainer = document.getElementById('chapter-text');
 
-
-    chapterContainer.innerHTML =
-        "";
+    chapterContainer.innerHTML = "";
 
 
     if (
         chapter.text &&
-        Array.isArray(
-            chapter.text
-        )
+        Array.isArray(chapter.text)
     ) {
 
         chapter.text.forEach(
             verse => {
 
-                const verseSpan =
-                    document.createElement(
-                        'span'
-                    );
+                const verseSpan = document.createElement('span');
 
+                const verseNum = document.createElement('span');
 
-                const verseNum =
-                    document.createElement(
-                        'span'
-                    );
+                verseNum.className = 'verse-number';
 
+                verseNum.innerText = verse.ID || "";
 
-                verseNum.className =
-                    'verse-number';
+                let rawText = (verse.text || "") + " ";
 
-
-                verseNum.innerText =
-                    verse.ID ||
-                    "";
-
-
-                let rawText =
-                    (verse.text || "") +
-                    " ";
-
-
-                verseSpan.appendChild(
-                    verseNum
-                );
+                verseSpan.appendChild(verseNum);
 
 
                 if (matchedWord) {
@@ -2816,16 +2374,14 @@ function openScriptureWindow(
 
                     if (activeSettings.showKeyword) {
 
-                        // Show the location but underline it
-                        // so the player knows which word to find.
+                        // Show the location but underline it.
                         const htmlText =
                             rawText.replace(
                                 regex,
                                 '<u><strong>$&</strong></u>'
                             );
 
-                        const wrapper =
-                            document.createElement('span');
+                        const wrapper = document.createElement('span');
 
                         wrapper.innerHTML = htmlText;
 
@@ -2834,11 +2390,7 @@ function openScriptureWindow(
                     } else {
 
                         // Blank the location name.
-                        const blanked =
-                            rawText.replace(
-                                regex,
-                                '_____'
-                            );
+                        const blanked = rawText.replace(regex, '_____');
 
                         verseSpan.appendChild(
                             document.createTextNode(blanked)
@@ -2855,62 +2407,41 @@ function openScriptureWindow(
 
                 if (
                     targetVerse &&
-                    verse.ID ===
-                        targetVerse.ID
+                    verse.ID === targetVerse.ID
                 ) {
 
-                    verseSpan.className =
-                        'target-verse';
+                    verseSpan.className = 'target-verse';
                 }
 
-
-                chapterContainer.appendChild(
-                    verseSpan
-                );
+                chapterContainer.appendChild(verseSpan);
             }
         );
 
     } else {
 
-        chapterContainer.innerText =
-            "Error loading chapter text.";
+        chapterContainer.innerText = "Error loading chapter text.";
     }
 
 
-    document.getElementById(
-        'scripture-modal'
-    ).style.display =
-        'flex';
+    document.getElementById('scripture-modal').style.display = 'flex';
 
-
-    document.getElementById(
-        'reopen-verse-btn'
-    ).style.display =
-        'none';
+    document.getElementById('reopen-verse-btn').style.display = 'none';
 
 
     setTimeout(
         () => {
 
-            const targetEl =
-                document.querySelector(
-                    '.target-verse'
-                );
-
+            const targetEl = document.querySelector('.target-verse');
 
             if (targetEl) {
 
                 targetEl.scrollIntoView(
                     {
-                        behavior:
-                            'smooth',
-
-                        block:
-                            'center'
+                        behavior: 'smooth',
+                        block: 'center'
                     }
                 );
             }
-
         },
         100
     );
@@ -2924,30 +2455,23 @@ function openScriptureWindow(
 window.minimizeScriptureWindow =
     function () {
 
-        document.getElementById(
-            'scripture-modal'
-        ).style.display =
-            'none';
+        document.getElementById('scripture-modal').style.display = 'none';
 
-
-        document.getElementById(
-            'reopen-verse-btn'
-        ).style.display =
-            'block';
+        document.getElementById('reopen-verse-btn').style.display = 'block';
     };
 
 
 window.reopenScriptureWindow =
     function () {
 
-        document.getElementById(
-            'scripture-modal'
-        ).style.display =
-            'flex';
+        document.getElementById('scripture-modal').style.display = 'flex';
 
-
-        document.getElementById(
-            'reopen-verse-btn'
-        ).style.display =
-            'none';
+        document.getElementById('reopen-verse-btn').style.display = 'none';
     };
+
+
+// ==========================================
+// INITIAL STATE
+// ==========================================
+
+updateDailyButton();
