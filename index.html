@@ -67,14 +67,19 @@
       transition: background-color 0.2s;
     }
 
-    .btn-blue { background-color: #265b8f; text-transform: uppercase; }
+    .btn-blue { background-color: #265b8f; }
     .btn-blue:hover { background-color: #1e4b78; }
 
-    .btn-grey { background-color: #444444; text-transform: uppercase; }
+    .btn-grey { background-color: #444444; }
     .btn-grey:hover { background-color: #333333; }
 
     .btn-daily { background-color: #265b8f; margin-top: 5px; }
     .btn-daily:hover { background-color: #1e4b78; }
+    a.menu-btn {
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+}
     
     /* Disabled State for Submit Button */
     .btn-disabled {
@@ -223,7 +228,6 @@
     #verse-reveal-box strong {
       font-weight: 900;
       font-size: 1.25rem;
-      text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     
@@ -394,6 +398,7 @@
     <button class="menu-btn btn-blue" id="btn-goto-custom">Custom Game</button>
     <button class="menu-btn btn-grey" id="btn-how-to">How to Play</button>
     <button class="menu-btn btn-daily" id="btn-daily">Play Daily Game</button>
+    <a class="menu-btn btn-grey" href="https://velocisniper.github.io/biblegames" target="_blank" rel="noopener noreferrer">Other Games</a>
   </div>
 
   <!-- Custom Game Menu -->
